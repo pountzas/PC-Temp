@@ -63,8 +63,6 @@ internal sealed class LhmCpuProbe : IDisposable
             return null;
         }
 
-        cpu.Update();
-
         var sensors = new List<SensorSnapshot>();
         foreach (var sensor in cpu.Sensors)
         {
@@ -81,6 +79,44 @@ internal sealed class LhmCpuProbe : IDisposable
         }
 
         return SensorMapper.Map(cpu.Name, sensors);
+    }
+
+    public void AcceptForDump(out string cpuName, out IReadOnlyList<SensorSnapshot> sensors)
+    {
+        if (!_open)
+        {
+            Open();
+        }
+
+        _computer.Accept(new UpdateVisitor());
+
+        IHardware? cpu = null;
+        foreach (var hardware in _computer.Hardware)
+        {
+            if (hardware.HardwareType == HardwareType.Cpu)
+            {
+                cpu = hardware;
+                break;
+            }
+        }
+
+        if (cpu is null)
+        {
+            throw new InvalidOperationException("no cpu hardware");
+        }
+
+        cpuName = cpu.Name;
+        var list = new List<SensorSnapshot>();
+        foreach (var sensor in cpu.Sensors)
+        {
+            list.Add(
+                new SensorSnapshot(
+                    sensor.SensorType.ToString(),
+                    sensor.Name,
+                    sensor.Value));
+        }
+
+        sensors = list;
     }
 
     public void Dispose()

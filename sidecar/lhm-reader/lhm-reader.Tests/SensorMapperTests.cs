@@ -70,6 +70,20 @@ public sealed class SensorMapperTests
     }
 
     [Fact]
+    public void nan_package_power_maps_to_null()
+    {
+        var sensors = new List<SensorSnapshot>
+        {
+            new SensorSnapshot("Power", "CPU Package", float.NaN),
+            new SensorSnapshot("Temperature", "CPU Package", 40),
+        };
+
+        var snapshot = SensorMapper.Map("Intel Core i7-3770K", sensors);
+        Assert.Null(snapshot.PackagePowerW);
+        Assert.Equal(40, snapshot.PackageTempC);
+    }
+
+    [Fact]
     public void absent_core_sensors_stay_null_not_zero()
     {
         var sensors = new List<SensorSnapshot>

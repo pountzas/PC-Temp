@@ -35,7 +35,7 @@ public static class SensorMapper
             }
 
             var value = (double)sensor.Value.Value;
-            if (value == 0)
+            if (value == 0 || double.IsNaN(value) || double.IsInfinity(value))
             {
                 continue;
             }

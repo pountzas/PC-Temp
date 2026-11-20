@@ -9,6 +9,9 @@ on:
       - 'scripts/build-sidecar.ps1'
       - '.github/workflows/sidecar.yml'
 
+permissions:
+  contents: read
+
 concurrency:
   group: sidecar-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -21,10 +24,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Setup .NET Framework
-        uses: actions/setup-dotnet@3e891b0cb619bf60e2c25674b222b8940e2c1c25 # v4.1.0
+      - name: Setup .NET
+        uses: actions/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852 # v4.2.0
         with:
-          dotnet-version: '8.0.x'
+          dotnet-version: 8.0.x
 
       - name: Restore
         run: dotnet restore sidecar/lhm-reader/lhm-reader.Tests/lhm-reader.Tests.csproj
@@ -38,3 +41,33 @@ jobs:
       - name: Package (smoke)
         shell: pwsh
         run: ./scripts/build-sidecar.ps1 -Configuration Release
+
+      - name: Protocol smoke (isolated exe)
+        shell: pwsh
+        run: |
+          $smokeDir = Join-Path $env:RUNNER_TEMP 'lhm-smoke'
+          New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
+          $exe = Join-Path $smokeDir 'lhm-reader-x86_64-pc-windows-msvc.exe'
+          Copy-Item -Force src-tauri/binaries/lhm-reader-x86_64-pc-windows-msvc.exe $exe
+          $inputLines = @('{"cmd":"read"}', '{"cmd":"quit"}') -join "`n"
+          $psi = @{
+            FilePath               = $exe
+            RedirectStandardInput  = $true
+            RedirectStandardOutput = $true
+            RedirectStandardError  = $true
+            NoNewWindow            = $true
+            PassThru               = $true
+          }
+          $proc = Start-Process @psi
+          $proc.StandardInput.WriteLine('{"cmd":"read"}')
+          $proc.StandardInput.WriteLine('{"cmd":"quit"}')
+          $proc.StandardInput.Close()
+          $stdout = $proc.StandardOutput.ReadToEnd()
+          $proc.WaitForExit()
+          if ($proc.ExitCode -ne 0) { throw "exit code $($proc.ExitCode)" }
+          $lines = $stdout.Trim() -split "`n" | Where-Object { $_.Length -gt 0 }
+          if ($lines.Count -ne 1) { throw "expected 1 stdout line, got $($lines.Count): $stdout" }
+          $obj = $lines[0] | ConvertFrom-Json
+          if (-not $obj.PSObject.Properties['ok']) { throw 'stdout JSON missing ok' }
+          $winRing = Get-ChildItem -Recurse -Path sidecar/lhm-reader/bin -Filter '*WinRing0*' -ErrorAction SilentlyContinue
+          if ($winRing) { throw "WinRing0 artifacts found: $($winRing.FullName -join ', ')" }

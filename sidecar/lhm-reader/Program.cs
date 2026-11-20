@@ -1,86 +1,58 @@
 using System;
+using System.Linq;
 using System.Text.Json;
+using LibreHardwareMonitor.Hardware;
 
 namespace LhmReader;
 
 internal static class Program
 {
-    private static int Main()
+    private static int Main(string[] args)
+    {
+        if (args.Any(a => string.Equals(a, "--dump-sensors", StringComparison.OrdinalIgnoreCase)))
+        {
+            return RunSensorDump();
+        }
+
+        using var probe = new LhmCpuProbe();
+        probe.Open();
+        return ProtocolLoop.Run(
+            Console.In,
+            Console.Out,
+            Console.Error,
+            () => probe.ReadSnapshot());
+    }
+
+    // Dev-only: elevated run with PawnIO; writes fixture JSON to stdout.
+    private static int RunSensorDump()
     {
         try
         {
             using var probe = new LhmCpuProbe();
             probe.Open();
-
-            while (true)
+            probe.AcceptForDump(out var cpuName, out var sensors);
+            var payload = new
             {
-                var line = Console.In.ReadLine();
-                if (line is null)
-                {
-                    return 0;
-                }
-
-                if (string.IsNullOrWhiteSpace(line))
-                {
-                    continue;
-                }
-
-                JsonDocument doc;
-                try
-                {
-                    doc = JsonDocument.Parse(line);
-                }
-                catch (JsonException)
-                {
-                    WriteStdout(ProtocolJson.SerializeError("invalid json"));
-                    continue;
-                }
-
-                using (doc)
-                {
-                    if (!doc.RootElement.TryGetProperty("cmd", out var cmdEl))
-                    {
-                        WriteStdout(ProtocolJson.SerializeError("missing cmd"));
-                        continue;
-                    }
-
-                    var cmd = cmdEl.GetString();
-                    switch (cmd)
-                    {
-                        case "read":
-                            HandleRead(probe);
-                            break;
-                        case "quit":
-                            return 0;
-                        default:
-                            WriteStdout(ProtocolJson.SerializeError($"unknown cmd: {cmd}"));
-                            break;
-                    }
-                }
-            }
+                cpuName,
+                sensors = sensors.Select(
+                    s =>
+                        new
+                        {
+                            type = s.Type,
+                            name = s.Name,
+                            value = s.Value,
+                        }),
+            };
+            var json = JsonSerializer.Serialize(
+                payload,
+                new JsonSerializerOptions { WriteIndented = true });
+            Console.Out.WriteLine(json);
+            return 0;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine(ex);
             return 1;
         }
-    }
-
-    private static void HandleRead(LhmCpuProbe probe)
-    {
-        var snapshot = probe.ReadSnapshot();
-        if (snapshot is null)
-        {
-            WriteStdout(ProtocolJson.SerializeError("no cpu hardware"));
-            return;
-        }
-
-        WriteStdout(ProtocolJson.SerializeSuccess(snapshot));
-    }
-
-    private static void WriteStdout(string json)
-    {
-        Console.Out.WriteLine(json);
-        Console.Out.Flush();
     }
 }

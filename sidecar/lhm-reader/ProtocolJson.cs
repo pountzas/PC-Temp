@@ -10,7 +10,6 @@ public static class ProtocolJson
     private static readonly JsonSerializerOptions Options = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         WriteIndented = false,
     };
 
@@ -44,6 +43,7 @@ public static class ProtocolJson
         public double? PackageTempC { get; set; }
         public double? PackagePowerW { get; set; }
         public IList<CoreDto> Cores { get; set; } = new List<CoreDto>();
+        [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
         public string? Driver { get; set; }
 
         public static CpuDto From(CpuReadSnapshot snapshot) =>
