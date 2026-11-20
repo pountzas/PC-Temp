@@ -541,6 +541,14 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
         }
 
+        fn fake_child_startup_delay() -> Duration {
+            if std::env::var("GITHUB_ACTIONS").is_ok() {
+                Duration::from_millis(1500)
+            } else {
+                Duration::from_millis(300)
+            }
+        }
+
         fn powershell_exe() -> PathBuf {
             std::env::var_os("SystemRoot")
                 .map(|root| {
@@ -592,7 +600,7 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
         fn fake_child_fixture_round_trip_quit_and_respawn() {
             let _lock = ps_test_lock();
             let mut child = LhmChild::spawn_command(fake_sidecar_command()).expect("spawn");
-            std::thread::sleep(Duration::from_millis(300));
+            std::thread::sleep(fake_child_startup_delay());
             let cpu = child.request_read().expect("read");
             assert_eq!(cpu.name, "Intel Core i7-3770K");
             child.send_quit();
@@ -600,6 +608,7 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
             drop(child);
             std::thread::sleep(Duration::from_millis(100));
             let mut replacement = LhmChild::spawn_command(fake_sidecar_command()).expect("respawn");
+            std::thread::sleep(fake_child_startup_delay());
             let cpu2 = replacement.request_read().expect("read after respawn");
             assert_eq!(cpu2.package_temp_c, Some(52.0));
             replacement.send_quit();

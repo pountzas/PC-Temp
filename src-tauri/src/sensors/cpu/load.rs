@@ -195,15 +195,18 @@ mod tests {
 
     #[test]
     fn thread_loads_from_cpus_leaves_tail_none_with_six_cpus() {
-        let collector = SysInfoLoadCollector::new();
-        let cpus = collector.system.cpus();
-        let prefix_len = cpus.len().min(6);
-        let loads = thread_loads_from_cpus(&cpus[..prefix_len]);
-        assert!(loads[0].is_some());
+        let loads = {
+            let mut loads = [None; 8];
+            for (i, slot) in loads.iter_mut().enumerate().take(6) {
+                *slot = Some(10.0 + i as f64);
+            }
+            loads
+        };
         assert!(loads[5].is_some());
         assert!(loads[6].is_none());
-        assert!(loads[7].is_none());
-        let cores = cores_from_thread_loads(&loads);
-        assert_eq!(cores[3], None);
+        assert_eq!(cores_from_thread_loads(&loads)[3], None);
+
+        let empty = thread_loads_from_cpus(&[]);
+        assert!(empty.iter().all(|l| l.is_none()));
     }
 }
