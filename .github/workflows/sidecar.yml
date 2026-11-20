@@ -45,29 +45,15 @@ jobs:
       - name: Protocol smoke (isolated exe)
         shell: pwsh
         run: |
-          $smokeDir = Join-Path $env:RUNNER_TEMP 'lhm-smoke'
-          New-Item -ItemType Directory -Force -Path $smokeDir | Out-Null
-          $exe = Join-Path $smokeDir 'lhm-reader-x86_64-pc-windows-msvc.exe'
+          $tmp = Join-Path $env:RUNNER_TEMP 'lhm-smoke'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          $exe = Join-Path $tmp 'lhm-reader.exe'
           Copy-Item -Force src-tauri/binaries/lhm-reader-x86_64-pc-windows-msvc.exe $exe
-          $inputLines = @('{"cmd":"read"}', '{"cmd":"quit"}') -join "`n"
-          $psi = @{
-            FilePath               = $exe
-            RedirectStandardInput  = $true
-            RedirectStandardOutput = $true
-            RedirectStandardError  = $true
-            NoNewWindow            = $true
-            PassThru               = $true
-          }
-          $proc = Start-Process @psi
-          $proc.StandardInput.WriteLine('{"cmd":"read"}')
-          $proc.StandardInput.WriteLine('{"cmd":"quit"}')
-          $proc.StandardInput.Close()
-          $stdout = $proc.StandardOutput.ReadToEnd()
-          $proc.WaitForExit()
-          if ($proc.ExitCode -ne 0) { throw "exit code $($proc.ExitCode)" }
-          $lines = $stdout.Trim() -split "`n" | Where-Object { $_.Length -gt 0 }
-          if ($lines.Count -ne 1) { throw "expected 1 stdout line, got $($lines.Count): $stdout" }
-          $obj = $lines[0] | ConvertFrom-Json
-          if (-not $obj.PSObject.Properties['ok']) { throw 'stdout JSON missing ok' }
+          $out = @('{"cmd":"read"}', '{"cmd":"quit"}') | & $exe
+          if ($LASTEXITCODE -ne 0) { throw "exit code $LASTEXITCODE" }
+          $lines = @($out | Where-Object { $_ -and $_.Trim().Length -gt 0 })
+          if ($lines.Count -ne 1) { throw "expected 1 stdout line, got $($lines.Count): $out" }
+          $json = $lines[0] | ConvertFrom-Json
+          if ($null -eq $json.ok) { throw "no ok field: $($lines[0])" }
           $winRing = Get-ChildItem -Recurse -Path sidecar/lhm-reader/bin -Filter '*WinRing0*' -ErrorAction SilentlyContinue
           if ($winRing) { throw "WinRing0 artifacts found: $($winRing.FullName -join ', ')" }
