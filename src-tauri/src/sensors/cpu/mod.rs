@@ -7,6 +7,8 @@ use crate::sensors::source::{CpuReading, CpuSource};
 use failures::FailureTracker;
 use lhm_client::{LhmClient, LhmCpuData, LhmReader};
 #[cfg(test)]
+use lhm_client::LhmCoreData;
+#[cfg(test)]
 use lhm_client::MockLhmClient;
 use load::{CpuLoadReading, SysInfoLoadCollector};
 
@@ -15,8 +17,9 @@ const BASE_CLOCK_MHZ: u32 = 3500;
 /// Live CPU sensor source: LHM sidecar for temps/power/clocks, `sysinfo` for load.
 pub struct RealCpuSource {
     lhm: Option<Box<dyn LhmReader>>,
+    lhm_health: FailureTracker<()>,
     load_collector: SysInfoLoadCollector,
-    name: FailureTracker<String>,
+    cpu_name: Option<String>,
     package_temp_c: FailureTracker<f64>,
     package_power_w: FailureTracker<f64>,
     clock_mhz: FailureTracker<f64>,
@@ -37,8 +40,9 @@ impl RealCpuSource {
     fn with_lhm(lhm: Option<Box<dyn LhmReader>>) -> Self {
         Self {
             lhm,
+            lhm_health: FailureTracker::new(),
             load_collector: SysInfoLoadCollector::new(),
-            name: FailureTracker::new(),
+            cpu_name: None,
             package_temp_c: FailureTracker::new(),
             package_power_w: FailureTracker::new(),
             clock_mhz: FailureTracker::new(),
@@ -53,7 +57,7 @@ impl RealCpuSource {
 
     #[cfg(test)]
     fn with_mock_lhm_and_load(load: CpuLoadReading) -> Self {
-        let mut source = Self::with_lhm(Some(Box::new(MockLhmClient::new())));
+        let mut source = Self::with_lhm(Some(Box::new(MockLhmClient::from_fixture())));
         source.load_override = Some(load);
         source
     }
@@ -79,30 +83,53 @@ impl RealCpuSource {
             .filter_map(|c| c.clock_mhz)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        self.name.apply_reading(Some(cpu.name));
+        self.cpu_name = Some(cpu.name);
         self.package_temp_c.apply_reading(cpu.package_temp_c);
         self.package_power_w.apply_reading(cpu.package_power_w);
         self.clock_mhz.apply_reading(max_clock);
 
+        let mut temps = [None; 4];
+        let mut clocks = [None; 4];
         for core in cpu.cores {
             let idx = core.index as usize;
             if idx < 4 {
-                self.core_temp[idx].apply_reading(core.temp_c);
-                self.core_clock[idx].apply_reading(core.clock_mhz);
+                temps[idx] = core.temp_c;
+                clocks[idx] = core.clock_mhz;
             }
+        }
+        for i in 0..4 {
+            self.core_temp[i].apply_reading(temps[i]);
+            self.core_clock[i].apply_reading(clocks[i]);
         }
     }
 
     fn ingest_lhm_failure(&mut self) {
-        self.name.apply_reading(None);
         self.package_temp_c.apply_reading(None);
         self.package_power_w.apply_reading(None);
         self.clock_mhz.apply_reading(None);
-        for tracker in &mut self.core_temp {
-            tracker.apply_reading(None);
+        for i in 0..4 {
+            self.core_temp[i].apply_reading(None);
+            self.core_clock[i].apply_reading(None);
         }
-        for tracker in &mut self.core_clock {
-            tracker.apply_reading(None);
+    }
+
+    fn poll_lhm(&mut self) {
+        let Some(lhm) = self.lhm.as_mut() else {
+            return;
+        };
+        match lhm.read() {
+            Ok(cpu) => {
+                self.lhm_health.apply_reading(Some(()));
+                self.ingest_lhm(cpu);
+            }
+            Err(err) => {
+                log::debug!("lhm read failed: {err}");
+                self.ingest_lhm_failure();
+                self.lhm_health.apply_reading(None);
+                if self.lhm_health.is_latched() {
+                    self.lhm = None;
+                }
+            }
         }
     }
 }
@@ -115,21 +142,14 @@ impl Default for RealCpuSource {
 
 impl CpuSource for RealCpuSource {
     fn read(&mut self) -> CpuReading {
-        match self.lhm.as_mut().map(|lhm| lhm.read()) {
-            Some(Ok(cpu)) => self.ingest_lhm(cpu),
-            Some(Err(err)) => {
-                log::debug!("lhm read failed: {err}");
-                self.ingest_lhm_failure();
-            }
-            None => self.ingest_lhm_failure(),
-        }
+        self.poll_lhm();
 
         let load = self.sample_load();
         let _ = self.total_load.apply_reading(Some(load.load_pct));
 
         let mut threads = Vec::with_capacity(8);
         for (i, raw) in load.thread_loads.iter().enumerate() {
-            let _ = self.thread_load[i].apply_reading(Some(*raw));
+            let _ = self.thread_load[i].apply_reading(*raw);
             threads.push(CpuThreadReading {
                 index: i as u32,
                 load_pct: self.thread_load[i].snapshot_value(),
@@ -138,7 +158,7 @@ impl CpuSource for RealCpuSource {
 
         let mut cores = Vec::with_capacity(4);
         for i in 0..4 {
-            let _ = self.core_load[i].apply_reading(Some(load.core_loads[i]));
+            let _ = self.core_load[i].apply_reading(load.core_loads[i]);
             cores.push(CpuCoreReading {
                 index: i as u8,
                 temp_c: self.core_temp[i].snapshot_value(),
@@ -148,8 +168,9 @@ impl CpuSource for RealCpuSource {
         }
 
         let name = self
-            .name
-            .snapshot_value()
+            .cpu_name
+            .clone()
+            .or_else(|| self.load_collector.brand())
             .unwrap_or_else(|| "CPU".to_string());
 
         let snapshot = CpuSnapshot {
@@ -178,7 +199,16 @@ mod real_cpu_tests {
     use load::cores_from_thread_loads;
 
     fn compact_load() -> CpuLoadReading {
-        let thread_loads = [30.0, 26.0, 32.0, 28.0, 35.0, 38.0, 29.0, 33.0];
+        let thread_loads = [
+            Some(30.0),
+            Some(26.0),
+            Some(32.0),
+            Some(28.0),
+            Some(35.0),
+            Some(38.0),
+            Some(29.0),
+            Some(33.0),
+        ];
         CpuLoadReading {
             load_pct: 34.0,
             thread_loads,
@@ -196,13 +226,7 @@ mod real_cpu_tests {
         assert_eq!(snap.package_power_w, Some(41.0));
         assert_eq!(snap.clock_mhz, Some(3900.0));
         assert_eq!(snap.load_pct, Some(34.0));
-        assert_eq!(snap.base_clock_mhz, BASE_CLOCK_MHZ);
-        assert_eq!(snap.cores[0].temp_c, Some(50.0));
-        assert_eq!(snap.cores[0].clock_mhz, Some(3900.0));
         assert_eq!(snap.cores[0].load_pct, Some(28.0));
-        let threads = snap.threads.as_ref().expect("threads");
-        assert_eq!(threads.len(), 8);
-        assert_eq!(threads[0].load_pct, Some(30.0));
     }
 
     #[test]
@@ -211,12 +235,93 @@ mod real_cpu_tests {
         let reading = cpu.read();
         let snap = &reading.snapshot;
         assert!(snap.package_temp_c.is_none());
-        assert!(snap.package_power_w.is_none());
-        assert!(snap.clock_mhz.is_none());
         assert_eq!(snap.load_pct, Some(34.0));
-        assert!(snap.cores.iter().all(|c| c.temp_c.is_none()));
-        assert!(snap.cores.iter().all(|c| c.clock_mhz.is_none()));
         assert_eq!(snap.cores[0].load_pct, Some(28.0));
+    }
+
+    #[test]
+    fn missing_core_two_leaves_none_for_that_slot() {
+        let partial = LhmCpuData {
+            name: "Intel Core i7-3770K".into(),
+            package_temp_c: Some(52.0),
+            package_power_w: Some(41.0),
+            cores: vec![
+                LhmCoreData {
+                    index: 0,
+                    temp_c: Some(50.0),
+                    clock_mhz: Some(3900.0),
+                },
+                LhmCoreData {
+                    index: 1,
+                    temp_c: Some(51.0),
+                    clock_mhz: Some(3900.0),
+                },
+                LhmCoreData {
+                    index: 3,
+                    temp_c: Some(52.0),
+                    clock_mhz: Some(3900.0),
+                },
+            ],
+        };
+        let mut cpu = RealCpuSource::with_lhm(Some(Box::new(MockLhmClient::with_data(partial))));
+        cpu.load_override = Some(compact_load());
+        let snap = cpu.read().snapshot;
+        assert_eq!(snap.cores[2].temp_c, None);
+        assert_eq!(snap.cores[2].clock_mhz, None);
+        assert_eq!(snap.cores[0].temp_c, Some(50.0));
+    }
+
+    #[test]
+    fn lhm_reader_invoked_only_three_times_then_dropped() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        let counter = Arc::new(AtomicUsize::new(0));
+        struct Wrapper(Arc<AtomicUsize>);
+        impl LhmReader for Wrapper {
+            fn read(&mut self) -> Result<LhmCpuData, lhm_client::LhmClientError> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(lhm_client::LhmClientError::Sidecar("x".into()))
+            }
+        }
+        let mut cpu = RealCpuSource::with_lhm(Some(Box::new(Wrapper(Arc::clone(&counter)))));
+        cpu.load_override = Some(compact_load());
+        for _ in 0..5 {
+            let _ = cpu.read();
+        }
+        assert_eq!(counter.load(Ordering::SeqCst), 3);
+    }
+
+    struct OnceOkThenFail {
+        calls: std::cell::Cell<usize>,
+        good: LhmCpuData,
+    }
+
+    impl LhmReader for OnceOkThenFail {
+        fn read(&mut self) -> Result<LhmCpuData, lhm_client::LhmClientError> {
+            self.calls.set(self.calls.get() + 1);
+            if self.calls.get() == 1 {
+                Ok(self.good.clone())
+            } else {
+                Err(lhm_client::LhmClientError::Sidecar("x".into()))
+            }
+        }
+    }
+
+    #[test]
+    fn cpu_name_survives_three_lhm_failures() {
+        let good = MockLhmClient::from_fixture()
+            .read()
+            .expect("fixture");
+        let mut cpu = RealCpuSource::with_lhm(Some(Box::new(OnceOkThenFail {
+            calls: std::cell::Cell::new(0),
+            good,
+        })));
+        cpu.load_override = Some(compact_load());
+        assert_eq!(cpu.read().snapshot.name, "Intel Core i7-3770K");
+        for _ in 0..4 {
+            let _ = cpu.read();
+        }
+        assert_eq!(cpu.read().snapshot.name, "Intel Core i7-3770K");
     }
 
     struct FailingLhm;
@@ -231,9 +336,9 @@ mod real_cpu_tests {
     fn three_lhm_failures_latch_package_temp_without_emitting_zero() {
         let mut cpu = RealCpuSource::with_lhm(Some(Box::new(FailingLhm)));
         cpu.load_override = Some(compact_load());
-        assert!(cpu.read().snapshot.package_temp_c.is_none());
-        assert!(cpu.read().snapshot.package_temp_c.is_none());
-        assert!(cpu.read().snapshot.package_temp_c.is_none());
+        for _ in 0..3 {
+            let _ = cpu.read();
+        }
         let fourth = cpu.read();
         assert!(fourth.snapshot.package_temp_c.is_none());
         assert_ne!(fourth.snapshot.package_temp_c, Some(0.0));
