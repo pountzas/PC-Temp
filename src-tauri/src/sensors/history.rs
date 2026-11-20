@@ -1,7 +1,9 @@
 use crate::ipc::types::{IntervalMs, Pct, SensorHistory};
 
 pub fn capacity_for_interval(interval_ms: IntervalMs) -> usize {
-    usize::try_from(60_000 / interval_ms).unwrap_or(0)
+    60_000u32
+        .checked_div(interval_ms)
+        .map_or(1, |c| c.max(1) as usize)
 }
 
 pub fn empty() -> SensorHistory {
@@ -38,11 +40,8 @@ pub fn push_gpu(history: &mut SensorHistory, interval_ms: IntervalMs, value: Opt
 }
 
 fn push_series(series: &mut Vec<Option<Pct>>, interval_ms: IntervalMs, value: Option<Pct>) {
-    let cap = capacity_for_interval(interval_ms);
-    if series.len() >= cap {
-        series.remove(0);
-    }
     series.push(value);
+    trim_newest_fit(series, capacity_for_interval(interval_ms));
 }
 
 #[cfg(test)]
@@ -57,6 +56,11 @@ mod tests {
     }
 
     #[test]
+    fn capacity_for_zero_interval_defaults_to_one() {
+        assert_eq!(capacity_for_interval(0), 1);
+    }
+
+    #[test]
     fn ring_keeps_newest_at_capacity() {
         let mut history = empty_for_interval(1000);
         for i in 0..65 {
@@ -65,6 +69,18 @@ mod tests {
         assert_eq!(history.cpu_load.len(), 60);
         assert_eq!(history.cpu_load[0], Some(5.0));
         assert_eq!(history.cpu_load[59], Some(64.0));
+    }
+
+    #[test]
+    fn five_second_push_into_sixty_sample_series_leaves_twelve() {
+        let mut history = empty_for_interval(1000);
+        for i in 0..60 {
+            push_cpu(&mut history, 1000, Some(f64::from(i)));
+        }
+        assert_eq!(history.cpu_load.len(), 60);
+        push_cpu(&mut history, 5000, Some(99.0));
+        assert_eq!(history.cpu_load.len(), 12);
+        assert_eq!(history.cpu_load[11], Some(99.0));
     }
 
     #[test]

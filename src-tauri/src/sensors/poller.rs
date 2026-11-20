@@ -4,7 +4,7 @@ use crate::sensors::alerts::AlertState;
 use crate::sensors::history::{self, empty_for_interval};
 use crate::sensors::source::{CpuReading, CpuSource, GpuReading, GpuSource};
 use crate::state::{AppState, PollerMsg};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
@@ -14,12 +14,21 @@ use tokio::time::MissedTickBehavior;
 const VALID_INTERVALS: [IntervalMs; 3] = [1000, 2000, 5000];
 
 struct SensorSources {
-    cpu: Box<dyn CpuSource>,
-    gpu: Box<dyn GpuSource>,
+    cpu: Arc<Mutex<Box<dyn CpuSource>>>,
+    gpu: Arc<Mutex<Box<dyn GpuSource>>>,
 }
 
 fn is_valid_interval(ms: IntervalMs) -> bool {
     VALID_INTERVALS.contains(&ms)
+}
+
+fn seed_interval_ms() -> IntervalMs {
+    let from_settings = crate::settings::get().interval_ms;
+    if is_valid_interval(from_settings) {
+        from_settings
+    } else {
+        1000
+    }
 }
 
 pub fn spawn(
@@ -27,115 +36,131 @@ pub fn spawn(
     state: Arc<AppState>,
     cpu: Box<dyn CpuSource>,
     gpu: Box<dyn GpuSource>,
-    mut rx: mpsc::Receiver<PollerMsg>,
+    rx: mpsc::Receiver<PollerMsg>,
 ) {
+    let sources = SensorSources {
+        cpu: Arc::new(Mutex::new(cpu)),
+        gpu: Arc::new(Mutex::new(gpu)),
+    };
     tauri::async_runtime::spawn(async move {
-        let sources = Arc::new(Mutex::new(SensorSources { cpu, gpu }));
-        let mut interval_ms: IntervalMs = 1000;
-        let mut sensor_history = empty_for_interval(interval_ms);
-        let mut alert_state = AlertState::new();
-        let mut tick = time::interval(Duration::from_millis(u64::from(interval_ms)));
-        tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-
-        loop {
-            tokio::select! {
-                msg = rx.recv() => {
-                    match msg {
-                        Some(PollerMsg::SetInterval(next)) => {
-                            if !is_valid_interval(next) {
-                                continue;
-                            }
-                            interval_ms = next;
-                            history::on_interval_change(&mut sensor_history, interval_ms);
-                            tick = time::interval(Duration::from_millis(u64::from(interval_ms)));
-                            tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
-                            tick.tick().await;
-                        }
-                        None => break,
-                    }
-                }
-                _ = tick.tick() => {
-                    let timeout = Duration::from_millis(u64::from(interval_ms));
-                    let (cpu_reading, gpu_reading) =
-                        read_with_timeout(Arc::clone(&sources), timeout).await;
-
-                    history::push_cpu(
-                        &mut sensor_history,
-                        interval_ms,
-                        cpu_reading.snapshot.load_pct,
-                    );
-                    history::push_gpu(
-                        &mut sensor_history,
-                        interval_ms,
-                        gpu_reading.snapshot.load_pct,
-                    );
-
-                    let mut alert_list = Vec::new();
-                    if let Some(alert) =
-                        alert_state.evaluate_cpu(cpu_reading.snapshot.package_temp_c)
-                    {
-                        alert_list.push(alert);
-                    }
-                    if let Some(alert) = alert_state.evaluate_gpu(gpu_reading.snapshot.core_temp_c)
-                    {
-                        alert_list.push(alert);
-                    }
-
-                    let sensor_tick = SensorTick {
-                        ts: chrono_like_now_ms(),
-                        interval_ms,
-                        cpu: cpu_reading.snapshot,
-                        gpu: gpu_reading.snapshot,
-                        history: sensor_history.clone(),
-                        alerts: alert_list,
-                    };
-
-                    if let Ok(mut guard) = state.last_tick.write() {
-                        *guard = Some(sensor_tick.clone());
-                    }
-
-                    let _ = app.emit(events::SENSORS, &sensor_tick);
-                }
-            }
-        }
+        run_loop(state, sources, rx, move |tick| {
+            let _ = app.emit(events::SENSORS, tick);
+        })
+        .await;
     });
 }
 
+async fn run_loop<E>(
+    state: Arc<AppState>,
+    sources: SensorSources,
+    mut rx: mpsc::Receiver<PollerMsg>,
+    mut on_emit: E,
+) where
+    E: FnMut(&SensorTick),
+{
+    let mut interval_ms = seed_interval_ms();
+    let mut sensor_history = empty_for_interval(interval_ms);
+    let mut alert_state = AlertState::new();
+    let mut tick = time::interval(Duration::from_millis(u64::from(interval_ms)));
+    tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+    loop {
+        tokio::select! {
+            msg = rx.recv() => {
+                match msg {
+                    Some(PollerMsg::SetInterval(next)) => {
+                        if !is_valid_interval(next) {
+                            continue;
+                        }
+                        interval_ms = next;
+                        history::on_interval_change(&mut sensor_history, interval_ms);
+                        tick = time::interval(Duration::from_millis(u64::from(interval_ms)));
+                        tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+                        tick.tick().await;
+                    }
+                    None => break,
+                }
+            }
+            _ = tick.tick() => {
+                let timeout =
+                    Duration::from_millis(u64::from(interval_ms) * 3 / 4);
+                let (cpu_reading, gpu_reading) =
+                    read_with_timeout(&sources, timeout).await;
+
+                history::push_cpu(
+                    &mut sensor_history,
+                    interval_ms,
+                    cpu_reading.snapshot.load_pct,
+                );
+                history::push_gpu(
+                    &mut sensor_history,
+                    interval_ms,
+                    gpu_reading.snapshot.load_pct,
+                );
+
+                let mut alert_list = Vec::new();
+                if let Some(alert) =
+                    alert_state.evaluate_cpu(cpu_reading.snapshot.package_temp_c)
+                {
+                    alert_list.push(alert);
+                }
+                if let Some(alert) = alert_state.evaluate_gpu(gpu_reading.snapshot.core_temp_c)
+                {
+                    alert_list.push(alert);
+                }
+
+                let sensor_tick = SensorTick {
+                    ts: chrono_like_now_ms(),
+                    interval_ms,
+                    cpu: cpu_reading.snapshot,
+                    gpu: gpu_reading.snapshot,
+                    history: sensor_history.clone(),
+                    alerts: alert_list,
+                };
+
+                if let Ok(mut guard) = state.last_tick.write() {
+                    *guard = Some(sensor_tick.clone());
+                }
+
+                on_emit(&sensor_tick);
+            }
+        }
+    }
+}
+
 async fn read_with_timeout(
-    sources: Arc<Mutex<SensorSources>>,
+    sources: &SensorSources,
     timeout: Duration,
 ) -> (CpuReading, GpuReading) {
-    let sources_cpu = Arc::clone(&sources);
-    let cpu_fut = tokio::time::timeout(
-        timeout,
-        tokio::task::spawn_blocking(move || {
-            let mut guard = sources_cpu
-                .lock()
-                .expect("sensor sources poisoned");
-            guard.cpu.read()
-        }),
-    );
+    let cpu = Arc::clone(&sources.cpu);
+    let cpu_fut = tokio::time::timeout(timeout, tokio::task::spawn_blocking(move || {
+        match cpu.try_lock() {
+            Ok(mut s) => Some(s.read()),
+            Err(TryLockError::Poisoned(p)) => Some(p.into_inner().read()),
+            Err(TryLockError::WouldBlock) => None,
+        }
+    }));
 
-    let sources_gpu = Arc::clone(&sources);
-    let gpu_fut = tokio::time::timeout(
-        timeout,
-        tokio::task::spawn_blocking(move || {
-            let mut guard = sources_gpu
-                .lock()
-                .expect("sensor sources poisoned");
-            guard.gpu.read()
-        }),
-    );
+    let gpu = Arc::clone(&sources.gpu);
+    let gpu_fut = tokio::time::timeout(timeout, tokio::task::spawn_blocking(move || {
+        match gpu.try_lock() {
+            Ok(mut s) => Some(s.read()),
+            Err(TryLockError::Poisoned(p)) => Some(p.into_inner().read()),
+            Err(TryLockError::WouldBlock) => None,
+        }
+    }));
 
     let (cpu_res, gpu_res) = tokio::join!(cpu_fut, gpu_fut);
 
     let cpu_reading = cpu_res
         .ok()
         .and_then(|join| join.ok())
+        .flatten()
         .unwrap_or_else(failed_cpu_reading);
     let gpu_reading = gpu_res
         .ok()
         .and_then(|join| join.ok())
+        .flatten()
         .unwrap_or_else(failed_gpu_reading);
 
     (cpu_reading, gpu_reading)
@@ -180,8 +205,26 @@ fn chrono_like_now_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sensors::history::{empty_for_interval, push_cpu};
+    use crate::ipc::types::Pct;
+    use crate::sensors::source::{MockCpu, MockGpu};
+    use std::sync::atomic::{AtomicU32, Ordering};
     use std::thread;
+    use tokio::time::{self as tokio_time, Duration as TokioDuration};
+
+    fn test_state() -> Arc<AppState> {
+        let (tx, _rx) = mpsc::channel(8);
+        Arc::new(AppState {
+            poller: crate::state::PollerHandle { tx },
+            last_tick: std::sync::RwLock::new(None),
+        })
+    }
+
+    fn test_sources() -> SensorSources {
+        SensorSources {
+            cpu: Arc::new(Mutex::new(Box::new(MockCpu::new()) as Box<dyn CpuSource>)),
+            gpu: Arc::new(Mutex::new(Box::new(MockGpu::new()) as Box<dyn GpuSource>)),
+        }
+    }
 
     struct SlowCpu {
         delay: Duration,
@@ -194,12 +237,38 @@ mod tests {
         }
     }
 
-    struct FastGpu;
+    struct FastGpu {
+        load: Option<Pct>,
+    }
 
     impl GpuSource for FastGpu {
         fn read(&mut self) -> GpuReading {
-            failed_gpu_reading()
+            let mut snap = failed_gpu_reading().snapshot;
+            snap.load_pct = self.load;
+            GpuReading { snapshot: snap }
         }
+    }
+
+    async fn advance_interval_ticks(n: u32) {
+        for _ in 0..n {
+            tokio_time::advance(TokioDuration::from_millis(1000)).await;
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+
+    async fn wait_until(mut predicate: impl FnMut() -> bool) {
+        for _ in 0..80 {
+            if predicate() {
+                return;
+            }
+            tokio_time::advance(TokioDuration::from_millis(50)).await;
+            for _ in 0..4 {
+                tokio::task::yield_now().await;
+            }
+        }
+        panic!("condition not met before poll budget exhausted");
     }
 
     #[test]
@@ -210,55 +279,141 @@ mod tests {
         assert!(!is_valid_interval(3000));
     }
 
-    #[tokio::test]
-    async fn slow_read_times_out_within_interval_budget() {
-        let sources = Arc::new(Mutex::new(SensorSources {
-            cpu: Box::new(SlowCpu {
-                delay: Duration::from_secs(3),
-            }),
-            gpu: Box::new(FastGpu),
-        }));
-        let timeout = Duration::from_millis(200);
-        let start = std::time::Instant::now();
-        let (cpu, _gpu) = read_with_timeout(sources, timeout).await;
-        assert!(start.elapsed() < Duration::from_millis(800));
-        assert!(cpu.snapshot.load_pct.is_none());
-    }
-
-    #[test]
-    fn last_tick_snapshot_includes_history_for_reload() {
-        let (tx, _rx) = mpsc::channel(8);
-        let state = Arc::new(AppState {
-            poller: crate::state::PollerHandle { tx },
-            last_tick: std::sync::RwLock::new(None),
-        });
-        let mut history = empty_for_interval(1000);
-        push_cpu(&mut history, 1000, Some(42.0));
-        let tick = SensorTick {
-            ts: 0,
-            interval_ms: 1000,
-            cpu: failed_cpu_reading().snapshot,
-            gpu: failed_gpu_reading().snapshot,
-            history,
-            alerts: vec![],
+    #[tokio::test(start_paused = true)]
+    async fn slow_read_times_out_gpu_load_preserved() {
+        let sources = SensorSources {
+            cpu: Arc::new(Mutex::new(Box::new(SlowCpu {
+                delay: Duration::from_millis(400),
+            }))),
+            gpu: Arc::new(Mutex::new(Box::new(FastGpu {
+                load: Some(58.0),
+            }))),
         };
-        *state.last_tick.write().expect("lock") = Some(tick.clone());
-        let stored = state
-            .last_tick
-            .read()
-            .expect("lock")
-            .clone()
-            .expect("tick");
-        assert_eq!(stored.history.cpu_load, vec![Some(42.0)]);
+        let timeout = Duration::from_millis(200);
+        let (cpu, gpu) = read_with_timeout(&sources, timeout).await;
+        assert!(cpu.snapshot.load_pct.is_none());
+        assert_eq!(gpu.snapshot.load_pct, Some(58.0));
+
+        tokio_time::advance(TokioDuration::from_millis(500)).await;
+        tokio::task::yield_now().await;
+
+        let (_, gpu2) = read_with_timeout(&sources, timeout).await;
+        assert_eq!(gpu2.snapshot.load_pct, Some(58.0));
     }
 
-    #[test]
-    fn set_interval_message_trims_history_like_poller() {
-        let mut history = empty_for_interval(1000);
-        for i in 0..60 {
-            push_cpu(&mut history, 1000, Some(f64::from(i)));
+    #[tokio::test(start_paused = true)]
+    async fn one_sensor_tick_per_second_over_three_seconds() {
+        let state = test_state();
+        let (_tx, rx) = mpsc::channel(8);
+        let tick_count = Arc::new(AtomicU32::new(0));
+        let count = Arc::clone(&tick_count);
+
+        let handle = tokio::spawn(async move {
+            run_loop(state, test_sources(), rx, move |_| {
+                count.fetch_add(1, Ordering::SeqCst);
+            })
+            .await;
+        });
+
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
         }
-        history::on_interval_change(&mut history, 5000);
-        assert_eq!(history.cpu_load.len(), 12);
+        advance_interval_ticks(3).await;
+        handle.abort();
+        let _ = handle.await;
+
+        let ticks = tick_count.load(Ordering::SeqCst);
+        assert!(ticks >= 3, "expected at least 3 ticks, got {ticks}");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn last_tick_accumulates_history_per_tick() {
+        let state = test_state();
+        let state_loop = Arc::clone(&state);
+        let (_tx, rx) = mpsc::channel(8);
+
+        let handle = tokio::spawn(async move {
+            run_loop(state_loop, test_sources(), rx, |_| {}).await;
+        });
+
+        wait_until(|| {
+            state
+                .last_tick
+                .read()
+                .ok()
+                .and_then(|g| g.clone())
+                .map(|t| t.history.cpu_load.len())
+                .unwrap_or(0)
+                >= 3
+        })
+        .await;
+
+        let tick = state.last_tick.read().unwrap().clone().expect("snapshot");
+        assert_eq!(tick.history.cpu_load.len(), 3);
+        assert_eq!(tick.history.gpu_load.len(), 3);
+
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn set_interval_five_seconds_on_next_tick() {
+        let state = test_state();
+        let state_loop = Arc::clone(&state);
+        let (tx, rx) = mpsc::channel(8);
+
+        let handle = tokio::spawn(async move {
+            run_loop(state_loop, test_sources(), rx, |_| {}).await;
+        });
+
+        advance_interval_ticks(60).await;
+        tx.send(PollerMsg::SetInterval(5000)).await.unwrap();
+        for _ in 0..5 {
+            tokio_time::advance(TokioDuration::from_millis(5000)).await;
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+            if state
+                .last_tick
+                .read()
+                .ok()
+                .and_then(|g| g.clone())
+                .map(|t| t.interval_ms)
+                == Some(5000)
+            {
+                break;
+            }
+        }
+
+        let tick = state.last_tick.read().unwrap().clone().expect("snapshot");
+        assert_eq!(tick.interval_ms, 5000);
+        assert!(tick.history.cpu_load.len() <= 12);
+
+        handle.abort();
+        let _ = handle.await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn invalid_set_interval_is_ignored() {
+        let state = test_state();
+        let state_loop = Arc::clone(&state);
+        let (tx, rx) = mpsc::channel(8);
+
+        let handle = tokio::spawn(async move {
+            run_loop(state_loop, test_sources(), rx, |_| {}).await;
+        });
+
+        tokio_time::advance(TokioDuration::from_millis(1000)).await;
+        tokio::task::yield_now().await;
+        tx.send(PollerMsg::SetInterval(3000)).await.unwrap();
+        tokio::task::yield_now().await;
+        tokio_time::advance(TokioDuration::from_millis(1000)).await;
+        tokio::task::yield_now().await;
+
+        let tick = state.last_tick.read().unwrap().clone().expect("snapshot");
+        assert_eq!(tick.interval_ms, 1000);
+
+        handle.abort();
+        let _ = handle.await;
     }
 }
