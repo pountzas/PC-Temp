@@ -79,7 +79,7 @@ impl NumericField {
                 None
             }
             Err(_) => {
-                self.failure_count += 1;
+                self.failure_count = self.failure_count.saturating_add(1);
                 if self.failure_count >= MAX_TRANSIENT_FAILURES {
                     self.value = None;
                 }
@@ -118,7 +118,7 @@ impl MiBField {
                 None
             }
             Err(_) => {
-                self.failure_count += 1;
+                self.failure_count = self.failure_count.saturating_add(1);
                 if self.failure_count >= MAX_TRANSIENT_FAILURES {
                     self.value = None;
                 }
@@ -166,12 +166,20 @@ fn poll_gpu_snapshot<R: NvmlDeviceReadings>(
                     fields.vram_total_mib.apply_bytes(Ok(total));
                 }
             }
-            Err(_) => {
+            Err(e) => {
+                let not_supported = matches!(e, NvmlError::NotSupported);
+                let err = || {
+                    if not_supported {
+                        NvmlError::NotSupported
+                    } else {
+                        NvmlError::Unknown
+                    }
+                };
                 if !fields.vram_used_mib.is_disabled() {
-                    fields.vram_used_mib.apply_bytes(Err(NvmlError::Unknown));
+                    fields.vram_used_mib.apply_bytes(Err(err()));
                 }
                 if !fields.vram_total_mib.is_disabled() {
-                    fields.vram_total_mib.apply_bytes(Err(NvmlError::Unknown));
+                    fields.vram_total_mib.apply_bytes(Err(err()));
                 }
             }
         }
@@ -210,11 +218,11 @@ impl NvmlGpuSource {
     pub fn new() -> Self {
         match Nvml::init() {
             Ok(nvml) => {
-                let (name, _) = match nvml.device_by_index(0) {
-                    Ok(device) => (device.name().unwrap_or_default(), ()),
+                let name = match nvml.device_by_index(0) {
+                    Ok(device) => device.name().unwrap_or_default(),
                     Err(e) => {
                         log::warn!("NVML device 0 unavailable: {e}");
-                        (String::new(), ())
+                        String::new()
                     }
                 };
                 Self {
@@ -334,6 +342,60 @@ mod tests {
         assert_eq!(reading.snapshot.fan_pct, None);
         assert_eq!(reading.snapshot.vram_used_mib, None);
         assert_eq!(reading.snapshot.vram_total_mib, None);
+    }
+
+    #[test]
+    fn transient_errors_keep_last_value_then_clear_on_third_and_recover() {
+        let mut f = NumericField::default();
+        assert_eq!(f.apply_u32(Ok(64)), Some(64.0));
+        assert_eq!(f.apply_u32(Err(NvmlError::Unknown)), Some(64.0));
+        assert_eq!(f.apply_u32(Err(NvmlError::Unknown)), Some(64.0));
+        assert_eq!(f.apply_u32(Err(NvmlError::Unknown)), None);
+        assert!(!f.is_disabled());
+        assert_eq!(f.apply_u32(Ok(65)), Some(65.0));
+    }
+
+    #[test]
+    fn failure_count_saturates_without_panic() {
+        let mut f = NumericField::default();
+        for _ in 0..300 {
+            f.apply_u32(Err(NvmlError::Unknown));
+        }
+        assert_eq!(f.value, None);
+    }
+
+    #[test]
+    fn memory_not_supported_disables_both_vram_fields() {
+        struct NoMem;
+
+        impl NvmlDeviceReadings for NoMem {
+            fn gpu_temperature_c(&self) -> Result<u32, NvmlError> {
+                Ok(64)
+            }
+
+            fn gpu_utilization_pct(&self) -> Result<u32, NvmlError> {
+                Ok(58)
+            }
+
+            fn graphics_clock_mhz(&self) -> Result<u32, NvmlError> {
+                Ok(1200)
+            }
+
+            fn fan_speed_pct(&self) -> Result<u32, NvmlError> {
+                Ok(42)
+            }
+
+            fn memory_used_and_total_bytes(&self) -> Result<(u64, u64), NvmlError> {
+                Err(NvmlError::NotSupported)
+            }
+        }
+
+        let mut fields = GpuFieldTracker::default();
+        let snap = poll_gpu_snapshot(&NoMem, "GPU", &mut fields);
+        assert_eq!(snap.vram_used_mib, None);
+        assert_eq!(snap.vram_total_mib, None);
+        assert!(fields.vram_used_mib.is_disabled());
+        assert!(fields.vram_total_mib.is_disabled());
     }
 
     #[test]
