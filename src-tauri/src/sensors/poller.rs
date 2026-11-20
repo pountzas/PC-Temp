@@ -18,7 +18,7 @@ pub fn spawn(
     mut rx: mpsc::Receiver<PollerMsg>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let mut interval_ms: IntervalMs = 1000;
+        let mut interval_ms: IntervalMs = crate::settings::get().interval_ms;
         let mut sensor_history = empty();
         let mut tick = time::interval(Duration::from_millis(u64::from(interval_ms)));
         tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);

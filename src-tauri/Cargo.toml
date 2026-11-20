@@ -28,7 +28,7 @@ sysinfo = "0.40"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-store = "2"
 thiserror = "2"
-tokio = { version = "1", features = ["rt", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 
 [profile.release]
 codegen-units = 1
