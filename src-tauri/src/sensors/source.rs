@@ -1,6 +1,7 @@
 use crate::ipc::types::{CpuSnapshot, GpuSnapshot, SensorTick};
 use serde::Deserialize;
-use std::path::PathBuf;
+
+const COMPACT_FIXTURE: &str = include_str!("../../../src/ipc/fixtures/compact.json");
 
 #[derive(Debug, Clone)]
 pub struct CpuReading {
@@ -20,17 +21,8 @@ pub trait GpuSource: Send {
     fn read(&mut self) -> GpuReading;
 }
 
-fn compact_fixture_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("repo root")
-        .join("src/ipc/fixtures/compact.json")
-}
-
 fn load_compact_tick() -> SensorTick {
-    let path = compact_fixture_path();
-    let raw = std::fs::read_to_string(path).expect("compact fixture");
-    serde_json::from_str(&raw).expect("parse compact SensorTick")
+    serde_json::from_str(COMPACT_FIXTURE).expect("parse compact SensorTick")
 }
 
 pub struct MockCpu {
@@ -90,7 +82,7 @@ impl GpuSource for MockGpu {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LhmCpuResponse {
     pub name: String,
     pub package_temp_c: Option<f64>,
@@ -99,10 +91,11 @@ pub struct LhmCpuResponse {
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LhmCoreResponse {
     pub index: u8,
     pub temp_c: Option<f64>,
+    #[serde(rename = "clockMHz")]
     pub clock_mhz: Option<f64>,
 }
 
@@ -124,5 +117,22 @@ mod tests {
         let reading = gpu.read();
         assert_eq!(reading.snapshot.load_pct, Some(58.0));
         assert_eq!(reading.snapshot.core_temp_c, Some(64.0));
+    }
+
+    #[test]
+    fn mock_cpu_returns_clocks_from_compact_fixture() {
+        let mut cpu = MockCpu::new();
+        let reading = cpu.read();
+        assert_eq!(reading.snapshot.clock_mhz, Some(3900.0));
+        assert!(reading.snapshot.cores.iter().all(|c| c.clock_mhz.is_some()));
+    }
+
+    #[test]
+    fn mock_gpu_returns_clock_and_vram_from_compact_fixture() {
+        let mut gpu = MockGpu::new();
+        let reading = gpu.read();
+        assert_eq!(reading.snapshot.core_clock_mhz, Some(1150.0));
+        assert_eq!(reading.snapshot.vram_used_mib, Some(512));
+        assert_eq!(reading.snapshot.vram_total_mib, Some(6144));
     }
 }
