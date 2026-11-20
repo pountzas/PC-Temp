@@ -1,5 +1,4 @@
 {
-  "trustedDependencies": ["esbuild"],
   "name": "pc-temp",
   "private": true,
   "version": "0.1.0",
