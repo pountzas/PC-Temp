@@ -6,7 +6,7 @@ Always-on-top Windows 11 hardware monitor widget (Tauri 2 + React + TypeScript +
 
 - Install [Node.js](https://nodejs.org/) 22+, [pnpm](https://pnpm.io/), and [Rust](https://rustup.rs/) stable.
 - `pnpm install`
-- **Elevated terminal required:** `pnpm tauri dev` (admin manifest — UAC if not elevated).
+- **Elevated terminal required:** run `pnpm tauri dev` from an Administrator terminal; otherwise launching the dev binary fails with `os error 740` (requires elevation). The built `pc-temp.exe` shows a UAC prompt.
 - Browser-only mock sensors: `pnpm dev:mock`
 
 ## Scripts

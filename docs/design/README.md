@@ -1,3 +1,3 @@
 # Design PNGs (HW-01)
 
-Expected exports: `01-compact.png` through `06-unfocused.png`. None were found locally during #2; add them here from the Paper file when exported.
+**AC 9 (issue #2) is still open:** expected exports `01-compact.png` … `06-unfocused.png` were not available locally during #2 and were not fabricated. Add them here from the Paper file when exported.
