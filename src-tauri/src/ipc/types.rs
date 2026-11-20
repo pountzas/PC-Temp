@@ -9,28 +9,30 @@ pub type MHz = f64;
 pub type IntervalMs = u32;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CpuCoreReading {
     pub index: u8,
     pub temp_c: Option<Celsius>,
     pub load_pct: Option<Pct>,
+    #[serde(rename = "clockMHz")]
     pub clock_mhz: Option<MHz>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CpuThreadReading {
     pub index: u32,
     pub load_pct: Option<Pct>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CpuSnapshot {
     pub name: String,
     pub load_pct: Option<Pct>,
     pub package_temp_c: Option<Celsius>,
     pub package_power_w: Option<Watts>,
+    #[serde(rename = "clockMHz")]
     pub clock_mhz: Option<MHz>,
     #[serde(rename = "baseClockMHz")]
     pub base_clock_mhz: u32,
@@ -40,19 +42,22 @@ pub struct CpuSnapshot {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct GpuSnapshot {
     pub name: String,
     pub load_pct: Option<Pct>,
     pub core_temp_c: Option<Celsius>,
+    #[serde(rename = "coreClockMHz")]
     pub core_clock_mhz: Option<MHz>,
     pub fan_pct: Option<Pct>,
+    #[serde(rename = "vramUsedMiB")]
     pub vram_used_mib: Option<u32>,
+    #[serde(rename = "vramTotalMiB")]
     pub vram_total_mib: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SensorAlert {
     pub component: AlertComponent,
     pub level: AlertLevel,
@@ -74,14 +79,14 @@ pub enum AlertLevel {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SensorHistory {
     pub cpu_load: Vec<Option<Pct>>,
     pub gpu_load: Vec<Option<Pct>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SensorTick {
     pub ts: u64,
     pub interval_ms: IntervalMs,
@@ -198,5 +203,40 @@ mod tests {
         let gpu = value.get("gpu").and_then(|g| g.as_object()).expect("gpu object");
         assert!(!gpu.contains_key("powerW"));
         assert!(!gpu.contains_key("packagePowerW"));
+    }
+
+    #[test]
+    fn compact_fixture_populates_mhz_and_mib_fields() {
+        let raw = fs::read_to_string(fixture_path("compact.json")).expect("read compact");
+        let tick: SensorTick = serde_json::from_str(&raw).expect("deserialize");
+        assert_eq!(tick.cpu.clock_mhz, Some(3900.0));
+        assert!(tick.cpu.cores.iter().all(|c| c.clock_mhz.is_some()));
+        assert_eq!(tick.gpu.core_clock_mhz, Some(1150.0));
+        assert_eq!(tick.gpu.vram_used_mib, Some(512));
+        assert_eq!(tick.gpu.vram_total_mib, Some(6144));
+    }
+
+    #[test]
+    fn serialised_tick_uses_contract_mhz_mib_key_names() {
+        let raw = fs::read_to_string(fixture_path("compact.json")).expect("read compact");
+        let tick: SensorTick = serde_json::from_str(&raw).expect("deserialize");
+        let json = serde_json::to_string(&tick).expect("serialize");
+        assert!(json.contains(r#""clockMHz""#));
+        assert!(json.contains(r#""coreClockMHz""#));
+        assert!(json.contains(r#""vramUsedMiB""#));
+        assert!(json.contains(r#""vramTotalMiB""#));
+        assert!(!json.contains(r#""clockMhz""#));
+        assert!(!json.contains(r#""coreClockMhz""#));
+        assert!(!json.contains(r#""vramUsedMib""#));
+        assert!(!json.contains(r#""vramTotalMib""#));
+    }
+
+    #[test]
+    fn unknown_cpu_field_fails_deserialize() {
+        let raw = fs::read_to_string(fixture_path("compact.json")).expect("read compact");
+        let mut value: serde_json::Value = serde_json::from_str(&raw).expect("parse");
+        value["cpu"]["unexpectedField"] = serde_json::json!(1);
+        let err = serde_json::from_value::<SensorTick>(value);
+        assert!(err.is_err());
     }
 }
