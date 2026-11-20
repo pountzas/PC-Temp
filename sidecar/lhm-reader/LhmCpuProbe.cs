@@ -1,0 +1,94 @@
+using System;
+using System.Collections.Generic;
+using LibreHardwareMonitor.Hardware;
+
+namespace LhmReader;
+
+internal sealed class UpdateVisitor : IVisitor
+{
+    public void VisitComputer(IComputer computer) =>
+        computer.Traverse(this);
+
+    public void VisitHardware(IHardware hardware)
+    {
+        hardware.Update();
+        foreach (var sub in hardware.SubHardware)
+        {
+            sub.Accept(this);
+        }
+    }
+
+    public void VisitSensor(ISensor sensor) { }
+
+    public void VisitParameter(IParameter parameter) { }
+}
+
+internal sealed class LhmCpuProbe : IDisposable
+{
+    private readonly Computer _computer = new() { IsCpuEnabled = true };
+    private bool _open;
+
+    public void Open()
+    {
+        if (_open)
+        {
+            return;
+        }
+
+        _computer.Open();
+        _open = true;
+    }
+
+    public CpuReadSnapshot? ReadSnapshot()
+    {
+        if (!_open)
+        {
+            Open();
+        }
+
+        _computer.Accept(new UpdateVisitor());
+
+        IHardware? cpu = null;
+        foreach (var hardware in _computer.Hardware)
+        {
+            if (hardware.HardwareType == HardwareType.Cpu)
+            {
+                cpu = hardware;
+                break;
+            }
+        }
+
+        if (cpu is null)
+        {
+            return null;
+        }
+
+        cpu.Update();
+
+        var sensors = new List<SensorSnapshot>();
+        foreach (var sensor in cpu.Sensors)
+        {
+            if (sensor.Value is null)
+            {
+                continue;
+            }
+
+            sensors.Add(
+                new SensorSnapshot(
+                    sensor.SensorType.ToString(),
+                    sensor.Name,
+                    sensor.Value));
+        }
+
+        return SensorMapper.Map(cpu.Name, sensors);
+    }
+
+    public void Dispose()
+    {
+        if (_open)
+        {
+            _computer.Close();
+            _open = false;
+        }
+    }
+}

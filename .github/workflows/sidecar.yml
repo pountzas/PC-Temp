@@ -1,0 +1,40 @@
+# Builds and unit-tests the LibreHardwareMonitor sidecar on Windows.
+name: sidecar
+
+on:
+  pull_request:
+    branches: [dev, main]
+    paths:
+      - 'sidecar/**'
+      - 'scripts/build-sidecar.ps1'
+      - '.github/workflows/sidecar.yml'
+
+concurrency:
+  group: sidecar-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: sidecar-windows
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Setup .NET Framework
+        uses: actions/setup-dotnet@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore
+        run: dotnet restore sidecar/lhm-reader/lhm-reader.Tests/lhm-reader.Tests.csproj
+
+      - name: Test
+        run: dotnet test sidecar/lhm-reader/lhm-reader.Tests/lhm-reader.Tests.csproj -c Release --no-restore
+
+      - name: Build Release
+        run: dotnet build sidecar/lhm-reader/lhm-reader.csproj -c Release --no-restore
+
+      - name: Package (smoke)
+        shell: pwsh
+        run: ./scripts/build-sidecar.ps1 -Configuration Release

@@ -1,0 +1,15 @@
+{
+  "cpuName": "Intel Core i7-3770K",
+  "sensors": [
+    { "type": "Temperature", "name": "CPU Package", "value": 52 },
+    { "type": "Temperature", "name": "CPU Core #1", "value": 50 },
+    { "type": "Temperature", "name": "CPU Core #2", "value": 51 },
+    { "type": "Temperature", "name": "CPU Core #3", "value": 49 },
+    { "type": "Temperature", "name": "CPU Core #4", "value": 52 },
+    { "type": "Power", "name": "CPU Package", "value": 41 },
+    { "type": "Clock", "name": "CPU Core #1", "value": 3900 },
+    { "type": "Clock", "name": "CPU Core #2", "value": 3900 },
+    { "type": "Clock", "name": "CPU Core #3", "value": 3850 },
+    { "type": "Clock", "name": "CPU Core #4", "value": 3900 }
+  ]
+}
