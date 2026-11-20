@@ -35,6 +35,7 @@
   --font-20: 20px;
   --font-30: 30px;
 
+  /* Font stacks [proposed, not in issue #4 §3 list — confirm against spec §3] */
   --font-family-mono: "JetBrains Mono", monospace;
   --font-family-display: "Rajdhani", sans-serif;
   --font-family-ui: "Inter", sans-serif;

@@ -4,6 +4,8 @@ type IconProps = SVGProps<SVGSVGElement> & {
   active?: boolean;
 };
 
+// Gear, pin and close paths are placeholders from Lucide (https://lucide.dev, ISC licence, Copyright (c) Lucide Contributors) until gen.py ICON paths are added to docs/spec/.
+
 const strokeDefaults = {
   fill: "none",
   strokeLinecap: "round" as const,
@@ -105,9 +107,7 @@ export function IconPin({ active = false, ...props }: IconProps) {
       {...props}
     >
       <path d="M12 17v5" />
-      <path d="M9 3h6" />
-      <path d="M12 3v9" />
-      <path d="m9 12-2 4.5a1.5 1.5 0 0 0 1.36 2.12h9.28a1.5 1.5 0 0 0 1.36-2.12L18 12" />
+      <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
     </svg>
   );
 }
