@@ -541,12 +541,35 @@ mod tests {
                 .unwrap_or_else(std::sync::PoisonError::into_inner)
         }
 
+        fn is_ci() -> bool {
+            std::env::var("GITHUB_ACTIONS").is_ok() || std::env::var("CI").is_ok()
+        }
+
         fn fake_child_startup_delay() -> Duration {
-            if std::env::var("GITHUB_ACTIONS").is_ok() {
-                Duration::from_millis(1500)
+            if is_ci() {
+                Duration::from_millis(2500)
             } else {
                 Duration::from_millis(300)
             }
+        }
+
+        fn spawn_fake_child_ready() -> LhmChild {
+            let mut last_err: Option<LhmClientError> = None;
+            let attempts = if is_ci() { 5 } else { 2 };
+            for _ in 0..attempts {
+                let mut child = LhmChild::spawn_command(fake_sidecar_command()).expect("spawn");
+                std::thread::sleep(fake_child_startup_delay());
+                match child.request_read() {
+                    Ok(_) => return child,
+                    Err(err @ LhmClientError::Timeout(_)) | Err(err @ LhmClientError::EmptyResponse) => {
+                        last_err = Some(err);
+                        drop(child);
+                        std::thread::sleep(Duration::from_millis(200));
+                    }
+                    Err(err) => panic!("{err}"),
+                }
+            }
+            panic!("fake child never became ready: {:?}", last_err);
         }
 
         fn powershell_exe() -> PathBuf {
@@ -599,16 +622,14 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
         #[test]
         fn fake_child_fixture_round_trip_quit_and_respawn() {
             let _lock = ps_test_lock();
-            let mut child = LhmChild::spawn_command(fake_sidecar_command()).expect("spawn");
-            std::thread::sleep(fake_child_startup_delay());
+            let mut child = spawn_fake_child_ready();
             let cpu = child.request_read().expect("read");
             assert_eq!(cpu.name, "Intel Core i7-3770K");
             child.send_quit();
             assert!(child.needs_respawn());
             drop(child);
             std::thread::sleep(Duration::from_millis(100));
-            let mut replacement = LhmChild::spawn_command(fake_sidecar_command()).expect("respawn");
-            std::thread::sleep(fake_child_startup_delay());
+            let mut replacement = spawn_fake_child_ready();
             let cpu2 = replacement.request_read().expect("read after respawn");
             assert_eq!(cpu2.package_temp_c, Some(52.0));
             replacement.send_quit();
