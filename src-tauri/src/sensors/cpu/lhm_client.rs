@@ -1,6 +1,7 @@
 //! Spawns and talks to the `lhm-reader` JSON-lines sidecar (HW-05).
 
 use crate::ipc::lhm_protocol::{parse_response, LhmReadCmd, LhmResponse};
+use crate::sensors::source::LhmCpuResponse;
 use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
@@ -8,6 +9,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const READ_TIMEOUT: Duration = Duration::from_millis(500);
+const STARTUP_GRACE: Duration = Duration::from_secs(10);
 const QUIT_WAIT: Duration = Duration::from_millis(500);
 const DEV_BINARY: &str = "binaries/lhm-reader-x86_64-pc-windows-msvc.exe";
 const BUNDLED_BINARY: &str = "lhm-reader.exe";
@@ -28,6 +30,8 @@ pub enum LhmClientError {
     EmptyResponse,
     #[error("sidecar pipe configuration error: {0}")]
     Pipe(String),
+    #[error("sidecar still starting")]
+    Starting,
 }
 
 /// Resolves the sidecar executable: bundled next to the host exe, else dev binary in debug builds only.
@@ -55,27 +59,11 @@ pub(crate) fn lhm_fixture_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/ipc/fixtures/lhm_read.json")
 }
 
-/// CPU block from the sidecar with correct `clockMHz` field naming (host `source` types omit it).
-#[derive(Debug, Clone, PartialEq)]
-pub struct LhmCpuData {
-    pub name: String,
-    pub package_temp_c: Option<f64>,
-    pub package_power_w: Option<f64>,
-    pub cores: Vec<LhmCoreData>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct LhmCoreData {
-    pub index: u8,
-    pub temp_c: Option<f64>,
-    pub clock_mhz: Option<f64>,
-}
-
 pub trait LhmReader: Send {
-    fn read(&mut self) -> Result<LhmCpuData, LhmClientError>;
+    fn read(&mut self) -> Result<LhmCpuResponse, LhmClientError>;
 }
 
-fn parse_cpu_data(resp: &LhmResponse, raw_line: &str) -> Result<LhmCpuData, LhmClientError> {
+fn parse_cpu_data(resp: &LhmResponse) -> Result<LhmCpuResponse, LhmClientError> {
     if !resp.ok {
         return Err(LhmClientError::Sidecar(
             resp.error
@@ -83,58 +71,13 @@ fn parse_cpu_data(resp: &LhmResponse, raw_line: &str) -> Result<LhmCpuData, LhmC
                 .unwrap_or_else(|| "unknown error".into()),
         ));
     }
-    parse_cpu_from_line(raw_line)
+    resp.cpu.clone().ok_or(LhmClientError::EmptyResponse)
 }
 
 /// Parses the `cpu` object from a full JSON-lines response (fixture uses `clockMHz`).
-pub fn parse_cpu_from_line(line: &str) -> Result<LhmCpuData, LhmClientError> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct LineCpu {
-        name: String,
-        package_temp_c: Option<f64>,
-        package_power_w: Option<f64>,
-        cores: Vec<LineCore>,
-    }
-
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct LineCore {
-        index: u8,
-        temp_c: Option<f64>,
-        #[serde(rename = "clockMHz")]
-        clock_mhz: Option<f64>,
-    }
-
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    struct LineRoot {
-        ok: bool,
-        cpu: Option<LineCpu>,
-        error: Option<String>,
-    }
-
-    let root: LineRoot = serde_json::from_str(line.trim())?;
-    if !root.ok {
-        return Err(LhmClientError::Sidecar(
-            root.error.unwrap_or_else(|| "unknown error".into()),
-        ));
-    }
-    let cpu = root.cpu.ok_or(LhmClientError::EmptyResponse)?;
-    Ok(LhmCpuData {
-        name: cpu.name,
-        package_temp_c: cpu.package_temp_c,
-        package_power_w: cpu.package_power_w,
-        cores: cpu
-            .cores
-            .into_iter()
-            .map(|c| LhmCoreData {
-                index: c.index,
-                temp_c: c.temp_c,
-                clock_mhz: c.clock_mhz,
-            })
-            .collect(),
-    })
+pub fn parse_cpu_from_line(line: &str) -> Result<LhmCpuResponse, LhmClientError> {
+    let resp = parse_response(line)?;
+    parse_cpu_data(&resp)
 }
 
 struct StdoutPump {
@@ -179,6 +122,8 @@ impl StdoutPump {
         &self,
         timeout: Duration,
         broken: &mut bool,
+        ready: bool,
+        spawned_at: Instant,
     ) -> Result<String, LhmClientError> {
         self.drain_stale();
         match self.rx.recv_timeout(timeout) {
@@ -188,8 +133,12 @@ impl StdoutPump {
                 Err(LhmClientError::Spawn(err))
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {
-                *broken = true;
-                Err(LhmClientError::Timeout(timeout))
+                if ready || spawned_at.elapsed() >= STARTUP_GRACE {
+                    *broken = true;
+                    Err(LhmClientError::Timeout(timeout))
+                } else {
+                    Err(LhmClientError::Starting)
+                }
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 *broken = true;
@@ -204,6 +153,8 @@ pub(crate) struct LhmChild {
     stdin: ChildStdin,
     stdout_pump: StdoutPump,
     broken: bool,
+    ready: bool,
+    spawned_at: Instant,
     #[cfg(windows)]
     job_handle: JobHandle,
     #[cfg(not(windows))]
@@ -246,8 +197,16 @@ impl LhmChild {
         }
 
         let mut child = cmd.spawn().map_err(LhmClientError::Spawn)?;
+        let spawned_at = Instant::now();
         #[cfg(windows)]
-        let job_handle = JobHandle(assign_kill_on_job_close(&child)?);
+        let job_handle = match assign_kill_on_job_close(&child) {
+            Ok(handle) => JobHandle(handle),
+            Err(err) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(err);
+            }
+        };
         #[cfg(not(windows))]
         let _job_placeholder = ();
 
@@ -266,6 +225,8 @@ impl LhmChild {
             stdin,
             stdout_pump,
             broken: false,
+            ready: false,
+            spawned_at,
             #[cfg(windows)]
             job_handle,
             #[cfg(not(windows))]
@@ -273,7 +234,7 @@ impl LhmChild {
         })
     }
 
-    fn request_read(&mut self) -> Result<LhmCpuData, LhmClientError> {
+    fn request_read(&mut self) -> Result<LhmCpuResponse, LhmClientError> {
         if self.broken || self.child.try_wait().ok().flatten().is_some() {
             self.broken = true;
             return Err(LhmClientError::EmptyResponse);
@@ -282,9 +243,15 @@ impl LhmChild {
             .write_all(LhmReadCmd::read_line().as_bytes())
             .map_err(LhmClientError::Spawn)?;
         self.stdin.flush().map_err(LhmClientError::Spawn)?;
-        let line = self.stdout_pump.recv_line(READ_TIMEOUT, &mut self.broken)?;
+        let line = self.stdout_pump.recv_line(
+            READ_TIMEOUT,
+            &mut self.broken,
+            self.ready,
+            self.spawned_at,
+        )?;
+        self.ready = true;
         let resp = parse_response(&line)?;
-        parse_cpu_data(&resp, &line)
+        parse_cpu_data(&resp)
     }
 
     fn send_quit(&mut self) {
@@ -428,7 +395,7 @@ impl LhmClient {
 }
 
 impl LhmReader for LhmClient {
-    fn read(&mut self) -> Result<LhmCpuData, LhmClientError> {
+    fn read(&mut self) -> Result<LhmCpuResponse, LhmClientError> {
         self.respawn_if_needed();
         let Some(child) = self.child.as_mut() else {
             return Err(LhmClientError::BinaryNotFound(self.binary.clone()));
@@ -445,7 +412,7 @@ impl Drop for LhmClient {
 
 #[cfg(test)]
 pub struct MockLhmClient {
-    data: Option<LhmCpuData>,
+    data: Option<LhmCpuResponse>,
 }
 
 #[cfg(test)]
@@ -454,7 +421,7 @@ impl MockLhmClient {
         Self { data: None }
     }
 
-    pub fn with_data(data: LhmCpuData) -> Self {
+    pub fn with_data(data: LhmCpuResponse) -> Self {
         Self { data: Some(data) }
     }
 
@@ -475,7 +442,7 @@ impl Default for MockLhmClient {
 
 #[cfg(test)]
 impl LhmReader for MockLhmClient {
-    fn read(&mut self) -> Result<LhmCpuData, LhmClientError> {
+    fn read(&mut self) -> Result<LhmCpuResponse, LhmClientError> {
         self.data
             .clone()
             .ok_or_else(|| LhmClientError::EmptyResponse)
@@ -561,7 +528,9 @@ mod tests {
                 std::thread::sleep(fake_child_startup_delay());
                 match child.request_read() {
                     Ok(_) => return child,
-                    Err(err @ LhmClientError::Timeout(_)) | Err(err @ LhmClientError::EmptyResponse) => {
+                    Err(err @ LhmClientError::Timeout(_))
+                    | Err(err @ LhmClientError::EmptyResponse)
+                    | Err(err @ LhmClientError::Starting) => {
                         last_err = Some(err);
                         drop(child);
                         std::thread::sleep(Duration::from_millis(200));
@@ -619,6 +588,60 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
             cmd
         }
 
+        fn slow_sidecar_command(delay_ms: u64) -> Command {
+            let fixture_json = fs::read_to_string(lhm_fixture_path()).expect("fixture");
+            let json_escaped = fixture_json.trim().replace('\'', "''");
+            let script = format!(
+                "$json = '{json_escaped}'\n\
+$reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput())\n\
+$writer = [Console]::Out\n\
+while ($null -ne ($line = $reader.ReadLine())) {{\n\
+  if ($line -match 'quit') {{ break }}\n\
+  if ($line -match 'read') {{ Start-Sleep -Milliseconds {delay_ms}; $writer.WriteLine($json); $writer.Flush() }}\n\
+}}\n"
+            );
+            let mut cmd = Command::new(powershell_exe());
+            cmd.args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &script,
+            ]);
+            cmd
+        }
+
+        #[test]
+        fn slow_startup_within_grace_succeeds_without_broken() {
+            let _lock = ps_test_lock();
+            let mut child = LhmChild::spawn_command(slow_sidecar_command(1500)).expect("spawn");
+            let first = child.request_read();
+            match first {
+                Err(LhmClientError::Starting) => {}
+                Ok(_) => {}
+                Err(err) => panic!("unexpected: {err}"),
+            }
+            assert!(!child.broken, "timeout during startup grace must not mark broken");
+            let mut cpu = None;
+            for _ in 0..8 {
+                match child.request_read() {
+                    Ok(parsed) => {
+                        cpu = Some(parsed);
+                        break;
+                    }
+                    Err(LhmClientError::Starting) => {
+                        std::thread::sleep(Duration::from_millis(400));
+                    }
+                    Err(err) => panic!("read after grace: {err}"),
+                }
+            }
+            let cpu = cpu.expect("slow sidecar should answer within startup grace");
+            assert_eq!(cpu.name, "Intel Core i7-3770K");
+            assert!(!child.broken);
+            child.send_quit();
+        }
+
         #[test]
         fn fake_child_fixture_round_trip_quit_and_respawn() {
             let _lock = ps_test_lock();
@@ -646,8 +669,18 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
                 binary: powershell_exe(),
                 child: Some(LhmChild::spawn_command(cmd).expect("spawn")),
             };
-            let err = client.read().expect_err("should time out");
-            assert!(matches!(err, LhmClientError::Timeout(_)));
+            let mut err = None;
+            for _ in 0..30 {
+                match client.read() {
+                    Err(e @ LhmClientError::Timeout(_)) => {
+                        err = Some(e);
+                        break;
+                    }
+                    Err(LhmClientError::Starting) => {}
+                    other => panic!("unexpected {:?}", other),
+                }
+            }
+            assert!(matches!(err, Some(LhmClientError::Timeout(_))));
             let _ = client.read();
         }
 

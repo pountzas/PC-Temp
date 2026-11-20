@@ -77,7 +77,7 @@ impl GpuSource for MockGpu {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LhmCpuResponse {
     pub name: String,
@@ -86,7 +86,7 @@ pub struct LhmCpuResponse {
     pub cores: Vec<LhmCoreResponse>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct LhmCoreResponse {
     pub index: u8,

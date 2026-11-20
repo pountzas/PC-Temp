@@ -80,12 +80,16 @@ impl SysInfoLoadCollector {
     }
 }
 
+static WARN_NON_EIGHT_CPUS: std::sync::Once = std::sync::Once::new();
+
 pub fn thread_loads_from_cpus(cpus: &[sysinfo::Cpu]) -> [Option<f64>; 8] {
     if cpus.len() != 8 {
-        log::warn!(
-            "expected 8 logical CPUs for load mapping, found {}",
-            cpus.len()
-        );
+        WARN_NON_EIGHT_CPUS.call_once(|| {
+            log::warn!(
+                "expected 8 logical CPUs for load mapping, found {}",
+                cpus.len()
+            );
+        });
     }
     let mut loads = [None; 8];
     for (i, cpu) in cpus.iter().take(8).enumerate() {

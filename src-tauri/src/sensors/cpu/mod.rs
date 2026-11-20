@@ -5,9 +5,10 @@ mod load;
 use crate::ipc::types::{CpuCoreReading, CpuSnapshot, CpuThreadReading};
 use crate::sensors::source::{CpuReading, CpuSource};
 use failures::FailureTracker;
-use lhm_client::{LhmClient, LhmCpuData, LhmReader};
+use crate::sensors::source::LhmCpuResponse;
+use lhm_client::{LhmClient, LhmReader};
 #[cfg(test)]
-use lhm_client::LhmCoreData;
+use crate::sensors::source::LhmCoreResponse;
 #[cfg(test)]
 use lhm_client::MockLhmClient;
 use load::{CpuLoadReading, SysInfoLoadCollector};
@@ -69,6 +70,11 @@ impl RealCpuSource {
         source
     }
 
+    #[cfg(test)]
+    fn sysinfo_brand(&self) -> Option<String> {
+        self.load_collector.brand()
+    }
+
     fn sample_load(&mut self) -> CpuLoadReading {
         if let Some(fixed) = self.load_override {
             return fixed;
@@ -76,7 +82,7 @@ impl RealCpuSource {
         self.load_collector.sample()
     }
 
-    fn ingest_lhm(&mut self, cpu: LhmCpuData) {
+    fn ingest_lhm(&mut self, cpu: LhmCpuResponse) {
         let max_clock = cpu
             .cores
             .iter()
@@ -121,6 +127,9 @@ impl RealCpuSource {
             Ok(cpu) => {
                 self.lhm_health.apply_reading(Some(()));
                 self.ingest_lhm(cpu);
+            }
+            Err(lhm_client::LhmClientError::Starting) => {
+                log::debug!("lhm still starting");
             }
             Err(err) => {
                 log::debug!("lhm read failed: {err}");
@@ -232,8 +241,12 @@ mod real_cpu_tests {
     #[test]
     fn without_sidecar_loads_still_populate_temps_none() {
         let mut cpu = RealCpuSource::without_lhm_with_load(compact_load());
+        let expected = cpu
+            .sysinfo_brand()
+            .unwrap_or_else(|| "CPU".to_string());
         let reading = cpu.read();
         let snap = &reading.snapshot;
+        assert_eq!(snap.name, expected);
         assert!(snap.package_temp_c.is_none());
         assert_eq!(snap.load_pct, Some(34.0));
         assert_eq!(snap.cores[0].load_pct, Some(28.0));
@@ -241,22 +254,22 @@ mod real_cpu_tests {
 
     #[test]
     fn missing_core_two_leaves_none_for_that_slot() {
-        let partial = LhmCpuData {
+        let partial = LhmCpuResponse {
             name: "Intel Core i7-3770K".into(),
             package_temp_c: Some(52.0),
             package_power_w: Some(41.0),
             cores: vec![
-                LhmCoreData {
+                LhmCoreResponse {
                     index: 0,
                     temp_c: Some(50.0),
                     clock_mhz: Some(3900.0),
                 },
-                LhmCoreData {
+                LhmCoreResponse {
                     index: 1,
                     temp_c: Some(51.0),
                     clock_mhz: Some(3900.0),
                 },
-                LhmCoreData {
+                LhmCoreResponse {
                     index: 3,
                     temp_c: Some(52.0),
                     clock_mhz: Some(3900.0),
@@ -278,7 +291,7 @@ mod real_cpu_tests {
         let counter = Arc::new(AtomicUsize::new(0));
         struct Wrapper(Arc<AtomicUsize>);
         impl LhmReader for Wrapper {
-            fn read(&mut self) -> Result<LhmCpuData, lhm_client::LhmClientError> {
+            fn read(&mut self) -> Result<LhmCpuResponse, lhm_client::LhmClientError> {
                 self.0.fetch_add(1, Ordering::SeqCst);
                 Err(lhm_client::LhmClientError::Sidecar("x".into()))
             }
@@ -293,11 +306,11 @@ mod real_cpu_tests {
 
     struct OnceOkThenFail {
         calls: std::cell::Cell<usize>,
-        good: LhmCpuData,
+        good: LhmCpuResponse,
     }
 
     impl LhmReader for OnceOkThenFail {
-        fn read(&mut self) -> Result<LhmCpuData, lhm_client::LhmClientError> {
+        fn read(&mut self) -> Result<LhmCpuResponse, lhm_client::LhmClientError> {
             self.calls.set(self.calls.get() + 1);
             if self.calls.get() == 1 {
                 Ok(self.good.clone())
@@ -327,8 +340,27 @@ mod real_cpu_tests {
     struct FailingLhm;
 
     impl LhmReader for FailingLhm {
-        fn read(&mut self) -> Result<LhmCpuData, lhm_client::LhmClientError> {
+        fn read(&mut self) -> Result<LhmCpuResponse, lhm_client::LhmClientError> {
             Err(lhm_client::LhmClientError::Sidecar("unavailable".into()))
+        }
+    }
+
+    struct StartingOnly;
+
+    impl LhmReader for StartingOnly {
+        fn read(&mut self) -> Result<LhmCpuResponse, lhm_client::LhmClientError> {
+            Err(lhm_client::LhmClientError::Starting)
+        }
+    }
+
+    #[test]
+    fn starting_errors_do_not_latch_lhm_health() {
+        let mut cpu = RealCpuSource::with_lhm(Some(Box::new(StartingOnly)));
+        cpu.load_override = Some(compact_load());
+        for _ in 0..5 {
+            let snap = cpu.read().snapshot;
+            assert!(snap.package_temp_c.is_none());
+            assert_eq!(snap.load_pct, Some(34.0));
         }
     }
 
