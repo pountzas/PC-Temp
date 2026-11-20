@@ -1,6 +1,7 @@
 use crate::ipc::commands::SettingsPatch;
 use crate::ipc::types::Settings;
 use std::sync::{OnceLock, RwLock};
+use tauri::AppHandle;
 
 static SETTINGS: OnceLock<RwLock<Settings>> = OnceLock::new();
 
@@ -8,7 +9,7 @@ fn store() -> &'static RwLock<Settings> {
     SETTINGS.get_or_init(|| RwLock::new(Settings::default_v1()))
 }
 
-pub fn init() {
+pub fn init(_app: &AppHandle) {
     let _ = store();
     log::info!("settings::init");
 }
@@ -52,7 +53,48 @@ pub fn update(patch: SettingsPatch) -> Result<Settings, String> {
         guard.last_undocked_view = last_undocked_view;
     }
     if let Some(position) = patch.position {
-        guard.position = Some(position);
+        guard.position = position;
     }
     Ok(guard.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ipc::types::WindowPosition;
+
+    fn empty_patch() -> SettingsPatch {
+        SettingsPatch {
+            opacity_pct: None,
+            click_through: None,
+            always_on_top: None,
+            units: None,
+            interval_ms: None,
+            start_with_windows: None,
+            accent: None,
+            view: None,
+            last_undocked_view: None,
+            position: None,
+        }
+    }
+
+    #[test]
+    fn position_patch_clears_on_null_and_keeps_on_omitted() {
+        let _ = store();
+        {
+            let mut guard = store().write().expect("lock");
+            guard.position = Some(WindowPosition { x: 10.0, y: 20.0 });
+        }
+
+        let unchanged = update(empty_patch()).expect("empty patch");
+        assert_eq!(
+            unchanged.position,
+            Some(WindowPosition { x: 10.0, y: 20.0 })
+        );
+
+        let mut clear_patch = empty_patch();
+        clear_patch.position = Some(None);
+        let cleared = update(clear_patch).expect("clear patch");
+        assert!(cleared.position.is_none());
+    }
 }
