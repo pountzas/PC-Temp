@@ -21,8 +21,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_store::Builder::new().build())
         .setup(|app| {
-            settings::init();
-            window::init();
+            settings::init(app.handle());
+            window::init(app.handle());
             tray::init(app);
 
             let cpu = sensors::cpu::create();
