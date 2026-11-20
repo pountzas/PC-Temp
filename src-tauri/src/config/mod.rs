@@ -1,3 +1,5 @@
+pub mod thresholds;
+
 pub const PRODUCT_NAME: &str = "PC-Temp";
 
 #[cfg(test)]

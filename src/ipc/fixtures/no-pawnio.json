@@ -1,0 +1,53 @@
+{
+  "ts": 1732147201000,
+  "intervalMs": 1000,
+  "cpu": {
+    "name": "Intel Core i7-3770K",
+    "loadPct": 41,
+    "packageTempC": null,
+    "packagePowerW": null,
+    "clockMHz": null,
+    "baseClockMHz": 3500,
+    "cores": [
+      { "index": 0, "tempC": null, "loadPct": 35, "clockMHz": null },
+      { "index": 1, "tempC": null, "loadPct": 42, "clockMHz": null },
+      { "index": 2, "tempC": null, "loadPct": 38, "clockMHz": null },
+      { "index": 3, "tempC": null, "loadPct": 48, "clockMHz": null }
+    ],
+    "threads": [
+      { "index": 0, "loadPct": 36 },
+      { "index": 1, "loadPct": 34 },
+      { "index": 2, "loadPct": 40 },
+      { "index": 3, "loadPct": 37 },
+      { "index": 4, "loadPct": 43 },
+      { "index": 5, "loadPct": 46 },
+      { "index": 6, "loadPct": 39 },
+      { "index": 7, "loadPct": 41 }
+    ]
+  },
+  "gpu": {
+    "name": "NVIDIA GeForce GTX 980 Ti",
+    "loadPct": 58,
+    "coreTempC": 64,
+    "coreClockMHz": 1150,
+    "fanPct": 42,
+    "vramUsedMiB": 512,
+    "vramTotalMiB": 6144
+  },
+  "history": {
+    "cpuLoad": [
+      null, null, null, null, null, null, null, null, null, null, null, null,
+      null, null, null, null, null, null, null, null, null, null, null, null,
+      null, null, null, null, null, null, null, null, null, null, null, null,
+      null, null, null, null, null, null, null, null, null, null, null, null,
+      null, null, null, null, null, null, null, null, null, null, null, 41
+    ],
+    "gpuLoad": [
+      55, 56, 57, 58, 58, 57, 56, 55, 54, 55, 56, 57, 58, 59, 58, 57, 56, 55,
+      54, 53, 54, 55, 56, 57, 58, 58, 57, 56, 55, 54, 53, 54, 55, 56, 57, 58,
+      59, 58, 57, 56, 55, 54, 53, 54, 55, 56, 57, 58, 58, 57, 56, 55, 54, 53,
+      54, 55, 56, 57, 58, 58
+    ]
+  },
+  "alerts": []
+}
