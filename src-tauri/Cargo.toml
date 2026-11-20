@@ -1,0 +1,38 @@
+[package]
+name = "pc-temp"
+version = "0.1.0"
+description = "PC-Temp hardware monitor widget"
+authors = ["pountzas"]
+edition = "2021"
+default-run = "pc-temp"
+autobins = false
+
+[[bin]]
+name = "pc-temp"
+path = "src/main.rs"
+test = false
+
+[lib]
+name = "pc_temp_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+log = "0.4"
+nvml-wrapper = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sysinfo = "0.40"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-store = "2"
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "sync", "time"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
