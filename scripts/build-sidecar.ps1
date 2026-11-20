@@ -16,10 +16,10 @@ $SourceExe = Join-Path $SidecarDir "bin/$Configuration/net481/lhm-reader.exe"
 Write-Host "Building lhm-reader ($Configuration)..."
 Push-Location $SidecarDir
 try {
-    dotnet build $Solution -c $Configuration --no-restore 2>$null
+    dotnet build $Project -c $Configuration --no-restore 2>$null
     if ($LASTEXITCODE -ne 0) {
-        dotnet restore $Solution
-        dotnet build $Solution -c $Configuration
+        dotnet restore $Project
+        dotnet build $Project -c $Configuration
         if ($LASTEXITCODE -ne 0) { throw 'dotnet build failed' }
     }
 }
