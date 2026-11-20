@@ -22,12 +22,16 @@ describe("tokens.css", () => {
   const css = readFileSync(tokensPath, "utf8");
   const tokens = parseCustomProperties(css);
 
-  it("scopes all colour literals to :root custom properties", () => {
+  it("scopes custom properties on :root", () => {
     expect(css).toMatch(/:root\s*\{/);
   });
 
-  const colourPairs: [string, string][] = [
+  const specPairs: [string, string][] = [
     ["--color-bg", "#05070C"],
+    ["--color-glass", "rgba(12,17,26,0.64)"],
+    ["--color-glass-raised", "rgba(255,255,255,0.05)"],
+    ["--color-line", "rgba(255,255,255,0.09)"],
+    ["--color-edge", "rgba(120,225,255,0.35)"],
     ["--color-text", "#EAF2F8"],
     ["--color-muted", "#93A3B5"],
     ["--color-faint", "#56637A"],
@@ -35,47 +39,48 @@ describe("tokens.css", () => {
     ["--color-gpu", "#B65CFF"],
     ["--color-warm", "#FFB020"],
     ["--color-hot", "#FF3B4E"],
-    ["--color-line", "rgba(255,255,255,0.09)"],
+    ["--color-mica-inactive", "#1D1F25"],
+    ["--color-window-border-inactive", "rgba(255,255,255,0.16)"],
+    ["--font-mono", '"JetBrains Mono"'],
+    ["--font-display", '"Rajdhani"'],
+    ["--font-sans", '"Inter"'],
+    ["--text-xs", "10px"],
+    ["--text-sm", "12px"],
+    ["--text-md", "14px"],
+    ["--text-lg", "20px"],
+    ["--text-xl", "30px"],
+    ["--font-weight-regular", "400"],
+    ["--font-weight-semibold", "600"],
+    ["--font-weight-bold", "700"],
+    ["--tracking-tight", "-0.02em"],
+    ["--tracking-caps", "0.14em"],
+    ["--opacity-muted", "40%"],
+    ["--radius-sm", "4px"],
+    ["--radius-md", "8px"],
+    ["--radius-lg", "14px"],
+    ["--radius-pill", "999px"],
+    ["--spacing-1", "4px"],
+    ["--spacing-2", "8px"],
+    ["--spacing-3", "12px"],
+    ["--spacing-4", "16px"],
+    ["--spacing-5", "20px"],
+    ["--spacing-6", "24px"],
+    ["--container-pill", "220px"],
+    ["--container-compact", "320px"],
+    ["--container-expanded", "420px"],
+    ["--breakpoint-desktop", "1280px"],
     ["--color-live", "#3DFFA8"],
     ["--color-hot-text", "#FF6B7A"],
     ["--color-track", "rgba(255,255,255,0.08)"],
     ["--color-divider", "rgba(255,255,255,0.06)"],
     ["--color-accent-bg", "rgba(34,229,255,0.12)"],
     ["--color-window-border", "rgba(255,255,255,0.10)"],
-    ["--color-mica-inactive", "#1D1F25"],
-    [
-      "--color-window-border-inactive",
-      "rgba(255,255,255,0.16)",
-    ],
-    ["--color-accent", "var(--color-cpu)"],
     ["--radius-window", "8px"],
     ["--radius-control", "4px"],
+    ["--color-accent", "var(--color-cpu)"],
   ];
 
-  it.each(colourPairs)("defines %s as %s", (name, value) => {
-    expect(tokens.get(name)).toBe(value);
-  });
-
-  it.each([
-    ["--font-10", "10px"],
-    ["--font-12", "12px"],
-    ["--font-14", "14px"],
-    ["--font-20", "20px"],
-    ["--font-30", "30px"],
-    ["--radius-4", "4px"],
-    ["--radius-8", "8px"],
-    ["--radius-14", "14px"],
-    ["--radius-999", "999px"],
-    ["--space-4", "4px"],
-    ["--space-8", "8px"],
-    ["--space-12", "12px"],
-    ["--space-16", "16px"],
-    ["--space-20", "20px"],
-    ["--space-24", "24px"],
-    ["--width-pill", "220px"],
-    ["--width-compact", "320px"],
-    ["--width-expanded", "420px"],
-  ])("defines scale token %s", (name, value) => {
+  it.each(specPairs)("defines %s as %s", (name, value) => {
     expect(tokens.get(name)).toBe(value);
   });
 });
