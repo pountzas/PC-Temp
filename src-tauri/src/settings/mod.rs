@@ -79,30 +79,22 @@ mod tests {
     }
 
     #[test]
-    fn position_null_clears_stored_position() {
+    fn position_patch_clears_on_null_and_keeps_on_omitted() {
         let _ = store();
         {
             let mut guard = store().write().expect("lock");
             guard.position = Some(WindowPosition { x: 10.0, y: 20.0 });
         }
-        let mut patch = empty_patch();
-        patch.position = Some(None);
-        let updated = update(patch).expect("update");
-        assert!(updated.position.is_none());
-    }
 
-    #[test]
-    fn omitted_position_leaves_stored_position() {
-        let _ = store();
-        {
-            let mut guard = store().write().expect("lock");
-            guard.position = Some(WindowPosition { x: 10.0, y: 20.0 });
-        }
-        let patch = empty_patch();
-        let updated = update(patch).expect("update");
+        let unchanged = update(empty_patch()).expect("empty patch");
         assert_eq!(
-            updated.position,
+            unchanged.position,
             Some(WindowPosition { x: 10.0, y: 20.0 })
         );
+
+        let mut clear_patch = empty_patch();
+        clear_patch.position = Some(None);
+        let cleared = update(clear_patch).expect("clear patch");
+        assert!(cleared.position.is_none());
     }
 }

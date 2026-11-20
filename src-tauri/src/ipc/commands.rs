@@ -29,7 +29,7 @@ where
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct SettingsPatch {
     pub opacity_pct: Option<f64>,
     pub click_through: Option<bool>,
@@ -81,14 +81,17 @@ pub fn update_settings(
     let interval_ms = patch.interval_ms;
     let updated = settings::update(patch)?;
     if let Some(interval_ms) = interval_ms {
-        state
+        if let Err(e) = state
             .poller
             .tx
             .try_send(PollerMsg::SetInterval(interval_ms))
-            .map_err(|e| format!("poller channel full: {e}"))?;
+        {
+            log::warn!("poller interval update dropped: {e}");
+        }
     }
-    app.emit(events::SETTINGS_CHANGED, &updated)
-        .map_err(|e| format!("emit settings-changed: {e}"))?;
+    if let Err(e) = app.emit(events::SETTINGS_CHANGED, &updated) {
+        log::warn!("emit settings-changed failed: {e}");
+    }
     Ok(updated)
 }
 
@@ -189,5 +192,11 @@ mod tests {
     fn settings_patch_omitted_position_stays_none() {
         let patch: SettingsPatch = serde_json::from_str(r#"{}"#).expect("deserialize");
         assert_eq!(patch.position, None);
+    }
+
+    #[test]
+    fn settings_patch_rejects_misspelled_interval_field() {
+        let err = serde_json::from_str::<SettingsPatch>(r#"{"interval":2000}"#);
+        assert!(err.is_err());
     }
 }
