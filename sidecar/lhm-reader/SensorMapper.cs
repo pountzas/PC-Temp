@@ -25,7 +25,6 @@ public static class SensorMapper
 
         double? packageTempC = null;
         double? packagePowerW = null;
-        var anySensorData = false;
 
         foreach (var sensor in sensors)
         {
@@ -43,14 +42,12 @@ public static class SensorMapper
             if (sensor.Type == "Temperature" && sensor.Name == "CPU Package")
             {
                 packageTempC = value;
-                anySensorData = true;
                 continue;
             }
 
             if (sensor.Type == "Power" && sensor.Name == "CPU Package")
             {
                 packagePowerW = value;
-                anySensorData = true;
                 continue;
             }
 
@@ -68,7 +65,6 @@ public static class SensorMapper
                             TempC = value,
                             ClockMHz = cores[idx].ClockMHz,
                         };
-                        anySensorData = true;
                     }
                 }
 
@@ -89,16 +85,9 @@ public static class SensorMapper
                             TempC = cores[idx].TempC,
                             ClockMHz = value,
                         };
-                        anySensorData = true;
                     }
                 }
             }
-        }
-
-        string? driver = null;
-        if (!anySensorData)
-        {
-            driver = "missing";
         }
 
         return new CpuReadSnapshot
@@ -107,7 +96,6 @@ public static class SensorMapper
             PackageTempC = packageTempC,
             PackagePowerW = packagePowerW,
             Cores = cores,
-            Driver = driver,
         };
     }
 }

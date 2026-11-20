@@ -17,7 +17,6 @@ public sealed class SensorMapperTests
         Assert.Equal("Intel Core i7-3770K", snapshot.Name);
         Assert.Equal(52, snapshot.PackageTempC);
         Assert.Equal(41, snapshot.PackagePowerW);
-        Assert.Null(snapshot.Driver);
         Assert.Equal(4, snapshot.Cores.Count);
 
         Assert.Equal(50, snapshot.Cores[0].TempC);
@@ -28,7 +27,7 @@ public sealed class SensorMapperTests
     }
 
     [Fact]
-    public void missing_sensors_use_null_not_zero_and_mark_driver_missing()
+    public void missing_sensors_use_null_not_zero()
     {
         var snapshot = SensorMapper.Map(
             "Intel Core i7-3770K",
@@ -36,7 +35,6 @@ public sealed class SensorMapperTests
 
         Assert.Null(snapshot.PackageTempC);
         Assert.Null(snapshot.PackagePowerW);
-        Assert.Equal("missing", snapshot.Driver);
         foreach (var core in snapshot.Cores)
         {
             Assert.Null(core.TempC);

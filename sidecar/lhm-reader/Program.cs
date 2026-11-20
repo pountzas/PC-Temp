@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using LibreHardwareMonitor.Hardware;
 
 namespace LhmReader;
@@ -45,7 +46,11 @@ internal static class Program
             };
             var json = JsonSerializer.Serialize(
                 payload,
-                new JsonSerializerOptions { WriteIndented = true });
+                new JsonSerializerOptions
+                {
+                    WriteIndented = true,
+                    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals,
+                });
             Console.Out.WriteLine(json);
             return 0;
         }

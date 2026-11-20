@@ -30,5 +30,4 @@ public sealed class CpuReadSnapshot
     public double? PackageTempC { get; set; }
     public double? PackagePowerW { get; set; }
     public IList<CpuCoreSnapshot> Cores { get; set; } = new List<CpuCoreSnapshot>();
-    public string? Driver { get; set; }
 }

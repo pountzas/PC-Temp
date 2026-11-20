@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using LibreHardwareMonitor.Hardware;
 
 namespace LhmReader;
@@ -88,6 +89,9 @@ internal sealed class LhmCpuProbe : IDisposable
             Open();
         }
 
+        // Two updates ~1s apart so RAPL power and effective core clocks are populated in the dump.
+        _computer.Accept(new UpdateVisitor());
+        Thread.Sleep(1000);
         _computer.Accept(new UpdateVisitor());
 
         IHardware? cpu = null;
