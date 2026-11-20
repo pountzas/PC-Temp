@@ -1,1 +1,29 @@
 # PC-Temp
+
+Always-on-top Windows 11 hardware monitor widget (Tauri 2 + React + TypeScript + Vite, pnpm).
+
+## Development
+
+- Install [Node.js](https://nodejs.org/) 22+, [pnpm](https://pnpm.io/), and [Rust](https://rustup.rs/) stable.
+- `pnpm install`
+- **Elevated terminal required:** `pnpm tauri dev` (admin manifest — UAC if not elevated).
+- Browser-only mock sensors: `pnpm dev:mock`
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `pnpm dev` | Vite dev server (widget + settings pages) |
+| `pnpm dev:mock` | Vite with `VITE_MOCK_SENSORS=1` |
+| `pnpm build` | Production frontend build |
+| `pnpm test` | Vitest unit tests |
+| `pnpm lint` | ESLint |
+| `pnpm typecheck` | TypeScript |
+| `pnpm tauri` | Tauri CLI (`pnpm tauri build`, etc.) |
+
+## Repository layout
+
+- `src-tauri/` — Rust core (`pc-temp` / `pc_temp_lib`), manifest, capabilities
+- `docs/spec/`, `docs/design/` — build spec and design exports (see READMEs there if assets are still missing)
+
+Integration branch: **`dev`**. Sub-PRs target `dev`, not `main`.
