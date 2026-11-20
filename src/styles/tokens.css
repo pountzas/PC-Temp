@@ -1,1 +1,60 @@
-/* Design tokens stub — HW-04 */
+/* Design tokens — HW-03 (issue #4; verbatim spec §3 unavailable in repo) */
+
+:root {
+  /* Core colours */
+  --color-bg: #05070C;
+  --color-text: #EAF2F8;
+  --color-muted: #93A3B5;
+  --color-faint: #56637A;
+  --color-cpu: #22E5FF;
+  --color-gpu: #B65CFF;
+  --color-warm: #FFB020;
+  --color-hot: #FF3B4E;
+  --color-line: rgba(255,255,255,0.09);
+
+  /* Proposed / extended */
+  --color-live: #3DFFA8;
+  --color-hot-text: #FF6B7A;
+  --color-track: rgba(255,255,255,0.08);
+  --color-divider: rgba(255,255,255,0.06);
+  --color-accent-bg: rgba(34,229,255,0.12);
+  --color-window-border: rgba(255,255,255,0.10);
+  --radius-window: 8px;
+  --radius-control: 4px;
+
+  /* 2026-11-20 */
+  --color-mica-inactive: #1D1F25;
+  --color-window-border-inactive: rgba(255,255,255,0.16);
+
+  --color-accent: var(--color-cpu);
+
+  /* Type scale (px) */
+  --font-10: 10px;
+  --font-12: 12px;
+  --font-14: 14px;
+  --font-20: 20px;
+  --font-30: 30px;
+
+  --font-family-mono: "JetBrains Mono", monospace;
+  --font-family-display: "Rajdhani", sans-serif;
+  --font-family-ui: "Inter", sans-serif;
+
+  /* Radii */
+  --radius-4: 4px;
+  --radius-8: 8px;
+  --radius-14: 14px;
+  --radius-999: 999px;
+
+  /* Spacing (4–24, step 4) */
+  --space-4: 4px;
+  --space-8: 8px;
+  --space-12: 12px;
+  --space-16: 16px;
+  --space-20: 20px;
+  --space-24: 24px;
+
+  /* View container widths */
+  --width-pill: 220px;
+  --width-compact: 320px;
+  --width-expanded: 420px;
+}
