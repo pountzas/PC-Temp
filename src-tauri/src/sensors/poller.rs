@@ -208,7 +208,6 @@ mod tests {
     use crate::ipc::types::Pct;
     use crate::sensors::source::{MockCpu, MockGpu};
     use std::sync::atomic::{AtomicU32, Ordering};
-    use std::thread;
     use tokio::time::{self as tokio_time, Duration as TokioDuration};
 
     fn test_state() -> Arc<AppState> {
@@ -226,13 +225,19 @@ mod tests {
         }
     }
 
-    struct SlowCpu {
-        delay: Duration,
+    struct GatedCpu {
+        calls: Arc<AtomicU32>,
+        release: std::sync::Mutex<std::sync::mpsc::Receiver<()>>,
     }
 
-    impl CpuSource for SlowCpu {
+    impl CpuSource for GatedCpu {
         fn read(&mut self) -> CpuReading {
-            thread::sleep(self.delay);
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            let guard = self
+                .release
+                .lock()
+                .expect("gated cpu release mutex poisoned");
+            let _ = guard.recv();
             failed_cpu_reading()
         }
     }
@@ -279,11 +284,14 @@ mod tests {
         assert!(!is_valid_interval(3000));
     }
 
-    #[tokio::test(start_paused = true)]
+    #[tokio::test]
     async fn slow_read_times_out_gpu_load_preserved() {
+        let calls = Arc::new(AtomicU32::new(0));
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
         let sources = SensorSources {
-            cpu: Arc::new(Mutex::new(Box::new(SlowCpu {
-                delay: Duration::from_millis(400),
+            cpu: Arc::new(Mutex::new(Box::new(GatedCpu {
+                calls: Arc::clone(&calls),
+                release: std::sync::Mutex::new(release_rx),
             }))),
             gpu: Arc::new(Mutex::new(Box::new(FastGpu {
                 load: Some(58.0),
@@ -294,11 +302,19 @@ mod tests {
         assert!(cpu.snapshot.load_pct.is_none());
         assert_eq!(gpu.snapshot.load_pct, Some(58.0));
 
-        tokio_time::advance(TokioDuration::from_millis(500)).await;
-        tokio::task::yield_now().await;
-
-        let (_, gpu2) = read_with_timeout(&sources, timeout).await;
+        let (cpu2, gpu2) = read_with_timeout(&sources, timeout).await;
+        assert!(cpu2.snapshot.load_pct.is_none());
         assert_eq!(gpu2.snapshot.load_pct, Some(58.0));
+        assert_eq!(
+            calls.load(Ordering::SeqCst),
+            1,
+            "in-flight CPU read should skip a second blocking call"
+        );
+
+        release_tx.send(()).expect("release gated cpu read");
+        for _ in 0..8 {
+            tokio::task::yield_now().await;
+        }
     }
 
     #[tokio::test(start_paused = true)]
@@ -323,7 +339,10 @@ mod tests {
         let _ = handle.await;
 
         let ticks = tick_count.load(Ordering::SeqCst);
-        assert!(ticks >= 3, "expected at least 3 ticks, got {ticks}");
+        assert!(
+            (3..=4).contains(&ticks),
+            "expected one tick per interval, got {ticks}"
+        );
     }
 
     #[tokio::test(start_paused = true)]
