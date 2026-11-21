@@ -30,6 +30,9 @@ tauri-plugin-store = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
 
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util", "macros", "rt", "rt-multi-thread", "sync", "time"] }
+
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = [
     "Win32_Foundation",
