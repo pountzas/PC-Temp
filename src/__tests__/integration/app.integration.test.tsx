@@ -63,7 +63,9 @@ function assertFixtureData(name: FixtureName) {
 async function renderAppWithFixture(name: FixtureName) {
   vi.stubEnv("VITE_MOCK_FIXTURE", name);
   const view = render(<App />);
-  await waitFor(() => assertFixtureData(name));
+  await waitFor(() => {
+    assertFixtureData(name);
+  });
   return view;
 }
 
