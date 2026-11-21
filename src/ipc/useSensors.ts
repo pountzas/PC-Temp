@@ -10,49 +10,48 @@ import { parseSensorTick } from "./types";
 import { isTauri, mockSensorsEnabled } from "./tauri";
 
 export function useSensors(intervalMs: IntervalMs = 1000): SensorTick | null {
-  const mockIntervalMs =
-    !isTauri() || mockSensorsEnabled() ? intervalMs : null;
+  const mockIntervalMs = !isTauri() || mockSensorsEnabled() ? intervalMs : null;
   const [tick, setTick] = useState<SensorTick | null>(null);
 
   useEffect(() => {
-    let active = true;
+    const lifecycle = { active: true };
 
     if (mockIntervalMs !== null) {
-      const stop = startMockSensorEmitter(
-        (next) => {
-          if (active) {
-            setTick(next);
-            if (import.meta.env.DEV) {
-              console.info("[mock:sensors]", next.intervalMs, "ms tick");
-            }
+      const stop = startMockSensorEmitter((next) => {
+        if (lifecycle.active) {
+          setTick(next);
+          if (import.meta.env.DEV) {
+            console.info("[mock:sensors]", next.intervalMs, "ms tick");
           }
-        },
-        mockIntervalMs,
-      );
+        }
+      }, mockIntervalMs);
       return () => {
-        active = false;
+        lifecycle.active = false;
         stop();
       };
     }
 
     void (async () => {
       const snapshot = await getSnapshot();
-      if (active && snapshot) {
-        setTick((prev) =>
-          prev && prev.ts >= snapshot.ts ? prev : snapshot,
-        );
+      if (!lifecycle.active) {
+        return;
+      }
+      if (snapshot !== null) {
+        setTick((prev) => (prev && prev.ts >= snapshot.ts ? prev : snapshot));
       }
     })();
 
     const unlisten = listen<unknown>(SENSORS, (event) => {
-      if (active) {
+      if (lifecycle.active) {
         setTick(parseSensorTick(event.payload));
       }
     });
 
     return () => {
-      active = false;
-      void unlisten.then((fn) => fn());
+      lifecycle.active = false;
+      void unlisten.then((fn) => {
+        fn();
+      });
     };
   }, [mockIntervalMs]);
 

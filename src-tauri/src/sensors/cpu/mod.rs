@@ -3,14 +3,14 @@ mod lhm_client;
 mod load;
 
 use crate::ipc::types::{CpuCoreReading, CpuSnapshot, CpuThreadReading};
-use crate::sensors::source::{CpuReading, CpuSource};
-use failures::FailureTracker;
-use crate::sensors::source::LhmCpuResponse;
-use lhm_client::{LhmClient, LhmReader};
 #[cfg(test)]
 use crate::sensors::source::LhmCoreResponse;
+use crate::sensors::source::LhmCpuResponse;
+use crate::sensors::source::{CpuReading, CpuSource};
+use failures::FailureTracker;
 #[cfg(test)]
 use lhm_client::MockLhmClient;
+use lhm_client::{LhmClient, LhmReader};
 use load::{CpuLoadReading, SysInfoLoadCollector};
 
 const BASE_CLOCK_MHZ: u32 = 3500;
@@ -241,9 +241,7 @@ mod real_cpu_tests {
     #[test]
     fn without_sidecar_loads_still_populate_temps_none() {
         let mut cpu = RealCpuSource::without_lhm_with_load(compact_load());
-        let expected = cpu
-            .sysinfo_brand()
-            .unwrap_or_else(|| "CPU".to_string());
+        let expected = cpu.sysinfo_brand().unwrap_or_else(|| "CPU".to_string());
         let reading = cpu.read();
         let snap = &reading.snapshot;
         assert_eq!(snap.name, expected);
@@ -322,9 +320,7 @@ mod real_cpu_tests {
 
     #[test]
     fn cpu_name_survives_three_lhm_failures() {
-        let good = MockLhmClient::from_fixture()
-            .read()
-            .expect("fixture");
+        let good = MockLhmClient::from_fixture().read().expect("fixture");
         let mut cpu = RealCpuSource::with_lhm(Some(Box::new(OnceOkThenFail {
             calls: std::cell::Cell::new(0),
             good,

@@ -20,13 +20,7 @@ export function IconGrip(props: SVGProps<SVGSVGElement>) {
     [8, 12],
   ];
   return (
-    <svg
-      width={10}
-      height={14}
-      viewBox="0 0 10 14"
-      aria-hidden
-      {...props}
-    >
+    <svg width={10} height={14} viewBox="0 0 10 14" aria-hidden {...props}>
       {circles.map(([cx, cy]) => (
         <circle
           key={`${cx}-${cy}`}

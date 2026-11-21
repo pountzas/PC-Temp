@@ -123,9 +123,7 @@ pub fn init(app: &AppHandle) {
     }
 
     {
-        let mut guard = memory()
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut guard = memory().write().unwrap_or_else(|e| e.into_inner());
         *guard = loaded.clone();
     }
 
@@ -243,10 +241,8 @@ mod tests {
         let mut patch = empty_patch();
         patch.interval_ms = Some(5000);
 
-        let err = update_with(patch, |_previous, _next| {
-            Err("save failed".to_string())
-        })
-        .expect_err("save should fail");
+        let err = update_with(patch, |_previous, _next| Err("save failed".to_string()))
+            .expect_err("save should fail");
         assert!(err.contains("save failed"));
 
         let after = memory().read().expect("lock").clone();

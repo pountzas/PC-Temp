@@ -61,12 +61,9 @@ pub fn clamp_top_left(pos: (f64, f64), size: (f64, f64), work: Rect) -> (f64, f6
 /// Physical or logical space — `point` must use the same units as `work_areas`.
 pub fn monitor_containing(point: (f64, f64), work_areas: &[Rect]) -> Option<usize> {
     let (px, py) = point;
-    work_areas.iter().position(|work| {
-        px >= work.x
-            && px < work.right()
-            && py >= work.y
-            && py < work.bottom()
-    })
+    work_areas
+        .iter()
+        .position(|work| px >= work.x && px < work.right() && py >= work.y && py < work.bottom())
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -96,11 +93,7 @@ pub fn settings_panel_origin(
     } else {
         widget.x - gap - settings_width
     };
-    clamp_top_left(
-        (x, widget.y),
-        (settings_width, settings_height),
-        work,
-    )
+    clamp_top_left((x, widget.y), (settings_width, settings_height), work)
 }
 
 #[cfg(test)]
@@ -188,10 +181,7 @@ mod tests {
 
     #[test]
     fn view_patch_sets_undocked_only_for_compact_and_expanded() {
-        assert_eq!(
-            view_patch(ViewMode::Pill).last_undocked_view,
-            None,
-        );
+        assert_eq!(view_patch(ViewMode::Pill).last_undocked_view, None,);
         assert_eq!(
             view_patch(ViewMode::Compact).last_undocked_view,
             Some(UndockedView::Compact),

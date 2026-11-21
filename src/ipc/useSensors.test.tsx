@@ -25,6 +25,13 @@ vi.mock("./tauri", () => tauriMock);
 
 type SensorHandler = (event: { payload: unknown }) => void;
 
+function defined<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`${label} is undefined`);
+  }
+  return value;
+}
+
 describe("useSensors", () => {
   let sensorHandler: SensorHandler | undefined;
   let resolveSnapshot: ((tick: SensorTick | null) => void) | undefined;
@@ -63,13 +70,13 @@ describe("useSensors", () => {
     });
 
     act(() => {
-      sensorHandler!({ payload: newer });
+      defined(sensorHandler, "sensorHandler")({ payload: newer });
     });
 
     expect(result.current?.ts).toBe(200);
 
     await act(async () => {
-      resolveSnapshot!(older);
+      defined(resolveSnapshot, "resolveSnapshot")(older);
       await Promise.resolve();
     });
 
@@ -86,7 +93,7 @@ describe("useSensors", () => {
     });
 
     await act(async () => {
-      resolveSnapshot!(snapshot);
+      defined(resolveSnapshot, "resolveSnapshot")(snapshot);
       await Promise.resolve();
     });
 

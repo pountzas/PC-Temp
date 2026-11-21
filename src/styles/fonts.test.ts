@@ -19,8 +19,16 @@ const requiredFaces: { family: string; weight: string; file: string }[] = [
     weight: "700",
     file: "jetbrains-mono-latin-700-normal.woff2",
   },
-  { family: "Rajdhani", weight: "600", file: "rajdhani-latin-600-normal.woff2" },
-  { family: "Rajdhani", weight: "700", file: "rajdhani-latin-700-normal.woff2" },
+  {
+    family: "Rajdhani",
+    weight: "600",
+    file: "rajdhani-latin-600-normal.woff2",
+  },
+  {
+    family: "Rajdhani",
+    weight: "700",
+    file: "rajdhani-latin-700-normal.woff2",
+  },
   { family: "Inter", weight: "400", file: "inter-latin-400-normal.woff2" },
   { family: "Inter", weight: "500", file: "inter-latin-500-normal.woff2" },
 ];

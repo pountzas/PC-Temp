@@ -326,7 +326,11 @@ mod tests {
         assert_eq!(snap.fan_pct, None);
         let snap2 = poll_gpu_snapshot(&device, "GPU", &mut fields);
         assert_eq!(snap2.fan_pct, None);
-        assert_eq!(*device.reads.borrow(), 1, "unsupported field is not retried");
+        assert_eq!(
+            *device.reads.borrow(),
+            1,
+            "unsupported field is not retried"
+        );
     }
 
     #[test]

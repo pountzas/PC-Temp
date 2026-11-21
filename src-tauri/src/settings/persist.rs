@@ -4,7 +4,7 @@ use serde_json::Value as JsonValue;
 pub const STORE_PATH: &str = "settings.json";
 pub const STORE_KEY: &str = "settings";
 
-fn merge_json(mut base: JsonValue, overlay: JsonValue) -> JsonValue {
+fn merge_json(base: JsonValue, overlay: JsonValue) -> JsonValue {
     match (base, overlay) {
         (JsonValue::Object(mut b), JsonValue::Object(o)) => {
             for (k, v) in o {
@@ -28,7 +28,7 @@ pub fn hydrate_settings(value: JsonValue) -> Settings {
 }
 
 pub fn settings_to_json(settings: &Settings) -> JsonValue {
-    serde_json::to_value(settings).unwrap_or_else(|_| JsonValue::Null)
+    serde_json::to_value(settings).unwrap_or(JsonValue::Null)
 }
 
 /// Startup policy: never restore click-through as enabled (tray must exist first).
@@ -42,7 +42,7 @@ pub fn sanitize_for_startup(mut settings: Settings) -> Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ipc::types::{Units, ViewMode, UndockedView};
+    use crate::ipc::types::{UndockedView, Units, ViewMode};
 
     #[test]
     fn hydrate_accepts_valid_v1_document() {

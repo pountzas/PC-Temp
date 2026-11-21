@@ -46,7 +46,7 @@ pub fn resolve_binary_path() -> PathBuf {
     }
     #[cfg(debug_assertions)]
     {
-        return PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEV_BINARY);
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEV_BINARY)
     }
     #[cfg(not(debug_assertions))]
     {
@@ -66,16 +66,15 @@ pub trait LhmReader: Send {
 fn parse_cpu_data(resp: &LhmResponse) -> Result<LhmCpuResponse, LhmClientError> {
     if !resp.ok {
         return Err(LhmClientError::Sidecar(
-            resp.error
-                .clone()
-                .unwrap_or_else(|| "unknown error".into()),
+            resp.error.clone().unwrap_or_else(|| "unknown error".into()),
         ));
     }
     resp.cpu.clone().ok_or(LhmClientError::EmptyResponse)
 }
 
 /// Parses the `cpu` object from a full JSON-lines response (fixture uses `clockMHz`).
-pub fn parse_cpu_from_line(line: &str) -> Result<LhmCpuResponse, LhmClientError> {
+#[cfg(test)]
+pub(crate) fn parse_cpu_from_line(line: &str) -> Result<LhmCpuResponse, LhmClientError> {
     let resp = parse_response(line)?;
     parse_cpu_data(&resp)
 }
@@ -311,7 +310,8 @@ fn assign_kill_on_job_close(
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
         AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
 
     unsafe {
@@ -417,10 +417,6 @@ pub struct MockLhmClient {
 
 #[cfg(test)]
 impl MockLhmClient {
-    pub fn new() -> Self {
-        Self { data: None }
-    }
-
     pub fn with_data(data: LhmCpuResponse) -> Self {
         Self { data: Some(data) }
     }
@@ -443,9 +439,7 @@ impl Default for MockLhmClient {
 #[cfg(test)]
 impl LhmReader for MockLhmClient {
     fn read(&mut self) -> Result<LhmCpuResponse, LhmClientError> {
-        self.data
-            .clone()
-            .ok_or_else(|| LhmClientError::EmptyResponse)
+        self.data.clone().ok_or(LhmClientError::EmptyResponse)
     }
 }
 
@@ -581,9 +575,7 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
                 "-ExecutionPolicy",
                 "Bypass",
                 "-File",
-                script_path
-                    .to_str()
-                    .expect("script path utf-8"),
+                script_path.to_str().expect("script path utf-8"),
             ]);
             cmd
         }
@@ -622,7 +614,10 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
                 Ok(_) => {}
                 Err(err) => panic!("unexpected: {err}"),
             }
-            assert!(!child.broken, "timeout during startup grace must not mark broken");
+            assert!(
+                !child.broken,
+                "timeout during startup grace must not mark broken"
+            );
             let mut cpu = None;
             for _ in 0..8 {
                 match child.request_read() {

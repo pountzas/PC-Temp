@@ -1,8 +1,8 @@
 import type { SensorTick } from "../../ipc/types";
 
-export interface ExpandedViewProps {
+export type ExpandedViewProps = {
   tick: SensorTick | null;
-}
+};
 
 export function ExpandedView({ tick }: ExpandedViewProps) {
   return (

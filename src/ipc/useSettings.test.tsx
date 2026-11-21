@@ -20,18 +20,27 @@ vi.mock("./tauri", () => ({
 
 type SettingsHandler = (event: { payload: unknown }) => void;
 
+function defined<T>(value: T | undefined, label: string): T {
+  if (value === undefined) {
+    throw new Error(`${label} is undefined`);
+  }
+  return value;
+}
+
 describe("useSettings", () => {
   let settingsHandler: SettingsHandler | undefined;
   let resolveSettings: ((settings: Settings) => void) | undefined;
 
   beforeEach(() => {
     settingsHandler = undefined;
-    listen.mockImplementation(async (event: string, handler: SettingsHandler) => {
-      if (event === SETTINGS_CHANGED) {
-        settingsHandler = handler;
-      }
-      return () => {};
-    });
+    listen.mockImplementation(
+      async (event: string, handler: SettingsHandler) => {
+        if (event === SETTINGS_CHANGED) {
+          settingsHandler = handler;
+        }
+        return () => {};
+      },
+    );
     getSettings.mockImplementation(
       () =>
         new Promise<Settings>((resolve) => {
@@ -54,7 +63,7 @@ describe("useSettings", () => {
     });
 
     await act(async () => {
-      resolveSettings!(fromCommand);
+      defined(resolveSettings, "resolveSettings")(fromCommand);
       await Promise.resolve();
     });
 
@@ -72,13 +81,13 @@ describe("useSettings", () => {
     });
 
     act(() => {
-      settingsHandler!({ payload: fromEvent });
+      defined(settingsHandler, "settingsHandler")({ payload: fromEvent });
     });
 
     expect(result.current.intervalMs).toBe(5000);
 
     await act(async () => {
-      resolveSettings!(fromCommand);
+      defined(resolveSettings, "resolveSettings")(fromCommand);
       await Promise.resolve();
     });
 

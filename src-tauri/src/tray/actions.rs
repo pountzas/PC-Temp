@@ -20,11 +20,7 @@ pub fn is_tray_owned_menu_id(id: &str) -> bool {
 }
 
 /// Apply the toggled click-through value: window first, persist only after window succeeds.
-pub fn toggle_click_through<A, C>(
-    current: bool,
-    apply_window: A,
-    commit: C,
-) -> Result<bool, String>
+pub fn toggle_click_through<A, C>(current: bool, apply_window: A, commit: C) -> Result<bool, String>
 where
     A: FnOnce(bool) -> Result<(), String>,
     C: FnOnce(bool) -> Result<(), String>,

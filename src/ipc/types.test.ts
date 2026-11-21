@@ -65,9 +65,7 @@ describe("SensorTick IPC contract", () => {
     expect(raw.cpu.packageTempC).toBeNull();
     expect(raw.cpu.packagePowerW).toBeNull();
     expect(raw.cpu.clockMHz).toBeNull();
-    const roundTrip = parseSensorTick(
-      JSON.parse(serializeSensorTick(raw)),
-    ) as SensorTick;
+    const roundTrip = parseSensorTick(JSON.parse(serializeSensorTick(raw)));
     expect(roundTrip.cpu.packageTempC).toBeNull();
     expect(roundTrip.cpu.packagePowerW).toBeNull();
     expect(roundTrip.cpu.clockMHz).toBeNull();

@@ -5,10 +5,10 @@ export const SETTINGS_CHANGED = "settings-changed";
 export const VIEW_CHANGED = "view-changed";
 export const SETTINGS_WINDOW = "settings-window";
 
-export interface ViewChangedPayload {
+export type ViewChangedPayload = {
   view: ViewMode;
-}
+};
 
-export interface SettingsWindowPayload {
+export type SettingsWindowPayload = {
   open: boolean;
-}
+};
