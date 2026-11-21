@@ -52,6 +52,6 @@ export default function App() {
       return <PillView tick={tick} />;
     case "compact":
     default:
-      return <CompactView tick={tick} />;
+      return <CompactView tick={tick} settings={settings} />;
   }
 }
