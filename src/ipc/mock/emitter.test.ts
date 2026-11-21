@@ -43,6 +43,23 @@ describe("startMockSensorEmitter", () => {
     expect(temps.size).toBeGreaterThan(1);
   });
 
+  it("cycles when VITE_MOCK_FIXTURE is an inherited key name such as toString", () => {
+    vi.stubEnv("VITE_MOCK_FIXTURE", "toString");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const temps = new Set<number | null>();
+
+    const stop = startMockSensorEmitter((tick) => {
+      temps.add(tick.cpu.packageTempC);
+    }, 1000);
+
+    vi.advanceTimersByTime(6000);
+    stop();
+
+    expect(warn).toHaveBeenCalled();
+    expect(temps.size).toBeGreaterThan(1);
+    warn.mockRestore();
+  });
+
   it("honours the intervalMs argument", () => {
     vi.stubEnv("VITE_MOCK_FIXTURE", "compact");
     let count = 0;

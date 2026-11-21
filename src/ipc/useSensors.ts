@@ -5,19 +5,19 @@ import { useEffect, useState } from "react";
 import { getSnapshot } from "./commands";
 import { SENSORS } from "./events";
 import { startMockSensorEmitter } from "./mock/emitter";
-import type { SensorTick } from "./types";
+import type { IntervalMs, SensorTick } from "./types";
 import { parseSensorTick } from "./types";
 import { isTauri, mockSensorsEnabled } from "./tauri";
-import { useSettings } from "./useSettings";
 
-export function useSensors(): SensorTick | null {
-  const settings = useSettings();
+export function useSensors(intervalMs: IntervalMs = 1000): SensorTick | null {
+  const mockIntervalMs =
+    !isTauri() || mockSensorsEnabled() ? intervalMs : null;
   const [tick, setTick] = useState<SensorTick | null>(null);
 
   useEffect(() => {
     let active = true;
 
-    if (!isTauri() || mockSensorsEnabled()) {
+    if (mockIntervalMs !== null) {
       const stop = startMockSensorEmitter(
         (next) => {
           if (active) {
@@ -27,7 +27,7 @@ export function useSensors(): SensorTick | null {
             }
           }
         },
-        settings.intervalMs,
+        mockIntervalMs,
       );
       return () => {
         active = false;
@@ -54,7 +54,7 @@ export function useSensors(): SensorTick | null {
       active = false;
       void unlisten.then((fn) => fn());
     };
-  }, [settings.intervalMs]);
+  }, [mockIntervalMs]);
 
   return tick;
 }

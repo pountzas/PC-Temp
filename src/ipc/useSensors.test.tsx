@@ -6,20 +6,22 @@ import { FIXTURES } from "./mock/fixtures";
 import type { SensorTick } from "./types";
 import { useSensors } from "./useSensors";
 
-const { listen, getSnapshot } = vi.hoisted(() => ({
-  listen: vi.fn(),
-  getSnapshot: vi.fn(),
-}));
+const { listen, getSnapshot, startMockSensorEmitter, tauriMock } = vi.hoisted(
+  () => ({
+    listen: vi.fn(),
+    getSnapshot: vi.fn(),
+    startMockSensorEmitter: vi.fn(),
+    tauriMock: {
+      isTauri: vi.fn(() => true),
+      mockSensorsEnabled: vi.fn(() => false),
+    },
+  }),
+);
 
 vi.mock("@tauri-apps/api/event", () => ({ listen }));
 vi.mock("./commands", () => ({ getSnapshot }));
-vi.mock("./tauri", () => ({
-  isTauri: () => true,
-  mockSensorsEnabled: () => false,
-}));
-vi.mock("./useSettings", () => ({
-  useSettings: () => ({ intervalMs: 1000 }),
-}));
+vi.mock("./mock/emitter", () => ({ startMockSensorEmitter }));
+vi.mock("./tauri", () => tauriMock);
 
 type SensorHandler = (event: { payload: unknown }) => void;
 
@@ -29,6 +31,9 @@ describe("useSensors", () => {
 
   beforeEach(() => {
     sensorHandler = undefined;
+    tauriMock.isTauri.mockReturnValue(true);
+    tauriMock.mockSensorsEnabled.mockReturnValue(false);
+    startMockSensorEmitter.mockReturnValue(() => {});
     listen.mockImplementation(async (event: string, handler: SensorHandler) => {
       if (event === SENSORS) {
         sensorHandler = handler;
@@ -69,5 +74,36 @@ describe("useSensors", () => {
     });
 
     expect(result.current?.ts).toBe(200);
+  });
+
+  it("applies getSnapshot when no sensors event arrived yet", async () => {
+    const snapshot: SensorTick = { ...FIXTURES.compact, ts: 300 };
+
+    const { result } = renderHook(() => useSensors());
+
+    await waitFor(() => {
+      expect(resolveSnapshot).toBeDefined();
+    });
+
+    await act(async () => {
+      resolveSnapshot!(snapshot);
+      await Promise.resolve();
+    });
+
+    expect(result.current?.ts).toBe(300);
+  });
+
+  it("passes intervalMs to startMockSensorEmitter when not in Tauri", async () => {
+    tauriMock.isTauri.mockReturnValue(false);
+
+    renderHook(() => useSensors(2000));
+
+    await waitFor(() => {
+      expect(startMockSensorEmitter).toHaveBeenCalledWith(
+        expect.any(Function),
+        2000,
+      );
+    });
+    expect(listen).not.toHaveBeenCalled();
   });
 });

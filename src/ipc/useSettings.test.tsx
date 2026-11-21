@@ -44,6 +44,23 @@ describe("useSettings", () => {
     vi.clearAllMocks();
   });
 
+  it("applies getSettings when no settings-changed event arrived yet", async () => {
+    const fromCommand: Settings = { ...defaultSettings(), intervalMs: 5000 };
+
+    const { result } = renderHook(() => useSettings());
+
+    await waitFor(() => {
+      expect(resolveSettings).toBeDefined();
+    });
+
+    await act(async () => {
+      resolveSettings!(fromCommand);
+      await Promise.resolve();
+    });
+
+    expect(result.current.intervalMs).toBe(5000);
+  });
+
   it("ignores a stale getSettings reply after settings-changed", async () => {
     const fromEvent: Settings = { ...defaultSettings(), intervalMs: 5000 };
     const fromCommand: Settings = { ...defaultSettings(), intervalMs: 1000 };
