@@ -14,14 +14,22 @@ fn memory() -> &'static RwLock<Settings> {
     SETTINGS.get_or_init(|| RwLock::new(Settings::default_v1()))
 }
 
-fn save_to_store(settings: &Settings) -> Result<(), String> {
+fn save_to_store(previous: &Settings, next: &Settings) -> Result<(), String> {
     let Some(app) = APP.get() else {
         return Ok(());
     };
     let store = app
         .store(STORE_PATH)
         .map_err(|e| format!("open settings store: {e}"))?;
-    store.set(STORE_KEY, settings_to_json(settings));
+    store.set(STORE_KEY, settings_to_json(next));
+    if let Err(e) = store
+        .save()
+        .map_err(|e| format!("persist settings store: {e}"))
+    {
+        store.set(STORE_KEY, settings_to_json(previous));
+        let _ = store.save();
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -30,7 +38,7 @@ fn load_from_store(app: &AppHandle) -> (Settings, bool) {
         Ok(store) => store,
         Err(e) => {
             log::warn!("settings store open failed: {e}");
-            return (Settings::default_v1(), true);
+            return (Settings::default_v1(), false);
         }
     };
     let first_run = !store.has(STORE_KEY);
@@ -60,6 +68,36 @@ fn apply_patch_side_effects(app: &AppHandle, apply_aot: bool, apply_ct: bool, up
         if let Err(e) = crate::window::apply_click_through(app, updated.click_through) {
             log::warn!("apply click_through: {e}");
         }
+    }
+}
+
+fn apply_patch(settings: &mut Settings, patch: &SettingsPatch) {
+    if let Some(opacity_pct) = patch.opacity_pct {
+        settings.opacity_pct = opacity_pct;
+    }
+    if let Some(click_through) = patch.click_through {
+        settings.click_through = click_through;
+    }
+    if let Some(always_on_top) = patch.always_on_top {
+        settings.always_on_top = always_on_top;
+    }
+    if let Some(units) = patch.units {
+        settings.units = units;
+    }
+    if let Some(interval_ms) = patch.interval_ms {
+        settings.interval_ms = interval_ms;
+    }
+    if let Some(ref accent) = patch.accent {
+        settings.accent = accent.clone();
+    }
+    if let Some(view) = patch.view {
+        settings.view = view;
+    }
+    if let Some(last_undocked_view) = patch.last_undocked_view {
+        settings.last_undocked_view = last_undocked_view;
+    }
+    if let Some(ref position) = patch.position {
+        settings.position = position.clone();
     }
 }
 
@@ -93,12 +131,8 @@ pub fn init(app: &AppHandle) {
 
     apply_startup_side_effects(app, &loaded);
 
-    if first_run {
-        if let Err(e) = save_to_store(&loaded) {
-            log::warn!("persist first-run settings: {e}");
-        }
-    } else if let Err(e) = save_to_store(&loaded) {
-        log::warn!("persist sanitized settings: {e}");
+    if let Err(e) = save_to_store(&loaded, &loaded) {
+        log::warn!("persist settings (first_run={first_run}): {e}");
     }
 
     log::info!("settings::init first_run={first_run}");
@@ -113,60 +147,52 @@ pub fn get() -> Settings {
     settings
 }
 
-pub fn update(patch: SettingsPatch) -> Result<Settings, String> {
+fn update_with(
+    patch: SettingsPatch,
+    save: impl FnOnce(&Settings, &Settings) -> Result<(), String>,
+) -> Result<Settings, String> {
     let apply_aot = patch.always_on_top.is_some();
     let apply_ct = patch.click_through.is_some();
 
-    let mut guard = memory()
-        .write()
-        .map_err(|_| "settings lock poisoned".to_string())?;
-
     if let Some(start_with_windows) = patch.start_with_windows {
         crate::autostart::set_enabled(start_with_windows)?;
-        guard.start_with_windows = crate::autostart::is_enabled();
-    }
-    if let Some(opacity_pct) = patch.opacity_pct {
-        guard.opacity_pct = opacity_pct;
-    }
-    if let Some(click_through) = patch.click_through {
-        guard.click_through = click_through;
-    }
-    if let Some(always_on_top) = patch.always_on_top {
-        guard.always_on_top = always_on_top;
-    }
-    if let Some(units) = patch.units {
-        guard.units = units;
-    }
-    if let Some(interval_ms) = patch.interval_ms {
-        guard.interval_ms = interval_ms;
-    }
-    if let Some(accent) = patch.accent {
-        guard.accent = accent;
-    }
-    if let Some(view) = patch.view {
-        guard.view = view;
-    }
-    if let Some(last_undocked_view) = patch.last_undocked_view {
-        guard.last_undocked_view = last_undocked_view;
-    }
-    if let Some(position) = patch.position {
-        guard.position = position;
     }
 
-    let updated = guard.clone();
-    save_to_store(&updated)?;
+    let previous = memory()
+        .read()
+        .map_err(|_| "settings lock poisoned".to_string())?
+        .clone();
+    let mut next = previous.clone();
+    apply_patch(&mut next, &patch);
+    next.start_with_windows = crate::autostart::is_enabled();
+
+    save(&previous, &next)?;
+
+    {
+        let mut guard = memory()
+            .write()
+            .map_err(|_| "settings lock poisoned".to_string())?;
+        *guard = next.clone();
+    }
 
     if let Some(app) = APP.get() {
-        apply_patch_side_effects(app, apply_aot, apply_ct, &updated);
+        apply_patch_side_effects(app, apply_aot, apply_ct, &next);
     }
 
-    Ok(updated)
+    Ok(next)
+}
+
+pub fn update(patch: SettingsPatch) -> Result<Settings, String> {
+    update_with(patch, save_to_store)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::ipc::types::WindowPosition;
+    use std::sync::{Arc, Mutex};
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     fn empty_patch() -> SettingsPatch {
         SettingsPatch {
@@ -185,6 +211,7 @@ mod tests {
 
     #[test]
     fn position_patch_clears_on_null_and_keeps_on_omitted() {
+        let _guard = TEST_LOCK.lock().expect("test lock");
         let _ = memory();
         {
             let mut guard = memory().write().expect("lock");
@@ -204,14 +231,57 @@ mod tests {
     }
 
     #[test]
-    fn update_persists_interval_to_json_round_trip() {
+    fn failed_save_leaves_memory_unchanged() {
+        let _guard = TEST_LOCK.lock().expect("test lock");
         let _ = memory();
+        let before = {
+            let mut guard = memory().write().expect("lock");
+            guard.interval_ms = 1000;
+            guard.clone()
+        };
+
         let mut patch = empty_patch();
         patch.interval_ms = Some(5000);
-        let updated = update(patch).expect("update");
-        assert_eq!(updated.interval_ms, 5000);
-        let json = settings_to_json(&updated);
-        let reloaded = hydrate_settings(json);
-        assert_eq!(reloaded.interval_ms, 5000);
+
+        let err = update_with(patch, |_previous, _next| {
+            Err("save failed".to_string())
+        })
+        .expect_err("save should fail");
+        assert!(err.contains("save failed"));
+
+        let after = memory().read().expect("lock").clone();
+        assert_eq!(after, before);
+    }
+
+    #[test]
+    fn successful_update_passes_previous_and_next_to_saver() {
+        let _guard = TEST_LOCK.lock().expect("test lock");
+        let _ = memory();
+        let before = {
+            let mut guard = memory().write().expect("lock");
+            guard.interval_ms = 1000;
+            guard.clone()
+        };
+
+        let captured = Arc::new(Mutex::new(None::<(Settings, Settings)>));
+        let captured_slot = captured.clone();
+
+        let mut patch = empty_patch();
+        patch.interval_ms = Some(2000);
+
+        let updated = update_with(patch, move |previous, next| {
+            *captured_slot.lock().expect("capture lock") = Some((previous.clone(), next.clone()));
+            Ok(())
+        })
+        .expect("update");
+
+        let (previous, next) = captured
+            .lock()
+            .expect("capture lock")
+            .take()
+            .expect("saver called");
+        assert_eq!(previous, before);
+        assert_eq!(next.interval_ms, 2000);
+        assert_eq!(updated.interval_ms, 2000);
     }
 }
