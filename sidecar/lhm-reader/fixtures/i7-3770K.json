@@ -1,0 +1,180 @@
+{
+  "cpuName": "Intel Core i7-3770K",
+  "sensors": [
+    {
+      "type": "Load",
+      "name": "CPU Core #1 Thread #1",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core #1 Thread #2",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core #2 Thread #1",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core #2 Thread #2",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core #3 Thread #1",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core #3 Thread #2",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core #4 Thread #1",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core #4 Thread #2",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Total",
+      "value": 100
+    },
+    {
+      "type": "Load",
+      "name": "CPU Core Max",
+      "value": 100
+    },
+    {
+      "type": "Temperature",
+      "name": "Core Max",
+      "value": 76
+    },
+    {
+      "type": "Temperature",
+      "name": "Core Average",
+      "value": 72.5
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #1",
+      "value": 72
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #2",
+      "value": 76
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #3",
+      "value": 74
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #4",
+      "value": 68
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Package",
+      "value": 74
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #1 Distance to TjMax",
+      "value": 33
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #2 Distance to TjMax",
+      "value": 29
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #3 Distance to TjMax",
+      "value": 31
+    },
+    {
+      "type": "Temperature",
+      "name": "CPU Core #4 Distance to TjMax",
+      "value": 37
+    },
+    {
+      "type": "Clock",
+      "name": "CPU Core #1",
+      "value": 3710.90552
+    },
+    {
+      "type": "Clock",
+      "name": "CPU Core #2",
+      "value": 3710.90552
+    },
+    {
+      "type": "Clock",
+      "name": "CPU Core #3",
+      "value": 3710.90552
+    },
+    {
+      "type": "Clock",
+      "name": "CPU Core #4",
+      "value": 3710.90552
+    },
+    {
+      "type": "Power",
+      "name": "CPU Package",
+      "value": 49.0171661
+    },
+    {
+      "type": "Power",
+      "name": "CPU Cores",
+      "value": 41.3844261
+    },
+    {
+      "type": "Power",
+      "name": "CPU Memory",
+      "value": 0
+    },
+    {
+      "type": "Power",
+      "name": "CPU Platform",
+      "value": 0
+    },
+    {
+      "type": "Voltage",
+      "name": "CPU Core",
+      "value": 1.15087891
+    },
+    {
+      "type": "Voltage",
+      "name": "CPU Core #1",
+      "value": 1.15087891
+    },
+    {
+      "type": "Voltage",
+      "name": "CPU Core #2",
+      "value": 1.15087891
+    },
+    {
+      "type": "Voltage",
+      "name": "CPU Core #3",
+      "value": 1.15087891
+    },
+    {
+      "type": "Voltage",
+      "name": "CPU Core #4",
+      "value": 1.15087891
+    },
+    {
+      "type": "Clock",
+      "name": "Bus Speed",
+      "value": 100.294746
+    }
+  ]
+}

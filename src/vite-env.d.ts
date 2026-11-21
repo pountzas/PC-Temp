@@ -7,6 +7,7 @@ declare module "*.json" {
 
 interface ImportMetaEnv {
   readonly VITE_MOCK_SENSORS?: string;
+  readonly VITE_MOCK_FIXTURE?: string;
 }
 
 interface ImportMeta {
