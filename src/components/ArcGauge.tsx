@@ -41,7 +41,7 @@ export function ArcGauge({
   const valueEnd = hasValue ? gaugeValueEndDeg(loadPct, size) : ARC_START_DEG;
   const valuePath = hasValue ? arcPath(c, c, r, ARC_START_DEG, valueEnd) : "";
   const ticks = gaugeTicks(S, sw);
-  const pctSuffix = Math.round(B * 0.55);
+  const pctSuffix = Math.floor(B * 0.55);
 
   const valueBlock: CSSProperties = {
     fontFamily: "var(--font-mono)",

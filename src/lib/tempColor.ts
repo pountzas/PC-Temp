@@ -37,7 +37,7 @@ export function levelForTempC(
   tick: SensorTick | null,
   component: AlertComponent,
 ): TempLevel {
-  if (tick !== null && tick.alerts.length > 0) {
+  if (tick !== null) {
     return levelFromAlerts(tick, component);
   }
   if (tempC === null) {

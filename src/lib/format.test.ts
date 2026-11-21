@@ -39,8 +39,8 @@ describe("format", () => {
   });
 
   describe("formatClock", () => {
-    it("formats tick timestamp as 24h HH:mm:ss (UTC)", () => {
-      const ts = Date.UTC(2026, 10, 19, 14, 32, 7);
+    it("formats tick timestamp as local 24h HH:mm:ss", () => {
+      const ts = new Date(2026, 10, 19, 14, 32, 7).getTime();
       expect(formatClock(ts)).toBe("14:32:07");
     });
   });

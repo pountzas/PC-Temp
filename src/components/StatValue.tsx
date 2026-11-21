@@ -16,7 +16,7 @@ export function StatValue({
   valueSize = 20,
   color = "var(--color-text)",
 }: StatValueProps) {
-  const unitSize = Math.round(valueSize * 0.55);
+  const unitSize = Math.floor(valueSize * 0.55);
 
   return (
     <div

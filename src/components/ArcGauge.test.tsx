@@ -23,6 +23,7 @@ describe("ArcGauge", () => {
       <ArcGauge loadPct={34} size={GAUGE_COMPACT} />,
     );
     expect(html).toContain(">34<span");
+    expect(html).toContain("font-size:9px");
     expect(html).toContain(`stroke-width="${GAUGE_COMPACT.strokeWidth + 5}"`);
     expect(end).toBeCloseTo(226.8, 1);
   });
@@ -34,5 +35,6 @@ describe("ArcGauge", () => {
     expect(html).toContain('width="84"');
     expect(html).toContain('stroke-width="6"');
     expect(html).toContain(">58<span");
+    expect(html).toContain("font-size:12px");
   });
 });

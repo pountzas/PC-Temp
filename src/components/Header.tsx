@@ -52,7 +52,7 @@ export function Header({ chip, buttons = [], onDragStart }: HeaderProps) {
 
   return (
     <header style={headerRow}>
-      <div {...dragRegionProps(onDrag)} data-tauri-drag-region>
+      <div {...dragRegionProps(onDrag)}>
         <IconGrip />
         <span style={wordmark}>PC-TEMP</span>
         {chip}
