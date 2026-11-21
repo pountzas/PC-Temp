@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "pnpm build",
+    "beforeBuildCommand": "pnpm build && powershell -NoProfile -ExecutionPolicy Bypass -File ./scripts/build-sidecar.ps1",
     "frontendDist": "../dist"
   },
   "app": {
@@ -50,13 +50,22 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "externalBin": ["binaries/lhm-reader"],
+    "resources": {
+      "../scripts/install-pawnio.ps1": "install-pawnio.ps1"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    }
   }
 }
