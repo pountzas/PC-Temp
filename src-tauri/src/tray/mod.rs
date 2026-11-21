@@ -5,7 +5,10 @@ use crate::ipc::events;
 use crate::ipc::types::Settings;
 use crate::settings;
 use crate::window;
-use actions::{is_tray_owned_menu_id, show_hide_menu_text, ID_CLICK_THROUGH, ID_QUIT, ID_SETTINGS, ID_SHOW_HIDE};
+use actions::{
+    is_tray_owned_menu_id, show_hide_menu_text, toggle_click_through, ID_CLICK_THROUGH, ID_QUIT,
+    ID_SETTINGS, ID_SHOW_HIDE, MENU_ORDER,
+};
 use std::sync::Arc;
 use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, Menu, MenuItem};
@@ -60,14 +63,29 @@ fn sync_click_through_check(state: &TrayMenuState, enabled: bool) {
     }
 }
 
-fn apply_click_through_setting(app: &AppHandle, enabled: bool) -> Result<(), String> {
+fn commit_click_through_setting(app: &AppHandle, enabled: bool) -> Result<(), String> {
     let mut patch = empty_settings_patch();
     patch.click_through = Some(enabled);
     let updated = settings::update(patch)?;
-    window::apply_click_through(app, enabled)?;
-    app.emit(events::SETTINGS_CHANGED, &updated)
-        .map_err(|e| format!("emit settings-changed: {e}"))?;
+    if let Err(e) = app.emit(events::SETTINGS_CHANGED, &updated) {
+        log::warn!("emit settings-changed failed: {e}");
+    }
     Ok(())
+}
+
+fn apply_click_through_setting(app: &AppHandle, enabled: bool) -> Result<(), String> {
+    let current = settings::get().click_through;
+    if enabled == !current {
+        toggle_click_through(
+            current,
+            |next| window::apply_click_through(app, next),
+            |next| commit_click_through_setting(app, next),
+        )
+        .map(|_| ())
+    } else {
+        window::apply_click_through(app, enabled)?;
+        commit_click_through_setting(app, enabled)
+    }
 }
 
 fn handle_menu_event(app: &AppHandle, id: &str) {
@@ -101,13 +119,11 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
             }
         }
         ID_CLICK_THROUGH => {
-            let enabled = state.click_through.is_checked().unwrap_or(false);
+            let enabled = !settings::get().click_through;
             if let Err(e) = apply_click_through_setting(app, enabled) {
                 log::warn!("tray click-through update failed: {e}");
-                sync_click_through_check(&state, settings::get().click_through);
-            } else {
-                sync_click_through_check(&state, enabled);
             }
+            sync_click_through_check(&state, settings::get().click_through);
         }
         ID_SETTINGS => {
             if let Err(e) = window::open_settings(app) {
@@ -198,14 +214,10 @@ pub fn init(app: &App) {
         }
     };
 
+    debug_assert_eq!(MENU_ORDER, [ID_SHOW_HIDE, ID_CLICK_THROUGH, ID_SETTINGS, ID_QUIT]);
     let menu = match Menu::with_items(
         app,
-        &[
-            &show_hide,
-            &click_through,
-            &settings_item,
-            &quit,
-        ],
+        &[&show_hide, &click_through, &settings_item, &quit],
     ) {
         Ok(menu) => menu,
         Err(e) => {
