@@ -48,6 +48,12 @@ jobs:
       - name: Frontend tests
         run: pnpm test
 
+      - name: Install WebView2 runtime
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile installwebview.exe -UseBasicParsing
+          cmd /C start /wait installwebview.exe /silent /install
+
       - name: Cargo tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
