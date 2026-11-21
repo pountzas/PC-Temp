@@ -11,7 +11,7 @@ describe("Windows installer packaging (#21)", () => {
       targets: string | string[];
       externalBin?: string[];
       resources?: string[] | Record<string, string>;
-      windows?: { nsis?: { installerHooks?: string } };
+      windows?: { nsis?: { installerHooks?: string; installMode?: string } };
     };
   };
 
@@ -20,7 +20,7 @@ describe("Windows installer packaging (#21)", () => {
     expect(conf.build.beforeBuildCommand).toMatch(/build-sidecar\.ps1/);
   });
 
-  it("targets NSIS and wires installer hooks", () => {
+  it("targets NSIS with per-machine install and installer hooks", () => {
     const targets = conf.bundle.targets;
     expect(
       targets === "nsis" ||
@@ -29,6 +29,7 @@ describe("Windows installer packaging (#21)", () => {
     expect(conf.bundle.windows?.nsis?.installerHooks).toBe(
       "./windows/hooks.nsh",
     );
+    expect(conf.bundle.windows?.nsis?.installMode).toBe("perMachine");
   });
 
   it("ships install-pawnio.ps1 as a bundle resource (not embedded PawnIO)", () => {
@@ -55,22 +56,47 @@ describe("Windows installer packaging (#21)", () => {
     expect(ps1).toMatch(/-silent/);
     expect(ps1).toMatch(/Get-AuthenticodeSignature/);
     expect(ps1).toMatch(/3010/);
+    expect(ps1).toMatch(/ProgressPreference\s*=\s*'SilentlyContinue'/);
+    expect(ps1).toMatch(/TimeoutSec\s+120/);
+    expect(ps1).toMatch(/NoPrompt/);
   });
 
-  it("NSIS hooks run PawnIO step and remove the PC-Temp scheduled task on uninstall", () => {
+  it("NSIS hooks run PawnIO at INSTDIR and remove the PC-Temp scheduled task", () => {
     const hooks = read("src-tauri/windows/hooks.nsh");
     expect(hooks).toMatch(/NSIS_HOOK_POSTINSTALL/);
-    expect(hooks).toMatch(/install-pawnio\.ps1/i);
+    expect(hooks).toContain('"$INSTDIR\\install-pawnio.ps1"');
+    expect(hooks).not.toMatch(/\$INSTDIR\\resources\\/i);
+    expect(hooks).toMatch(/IfFileExists/);
+    expect(hooks).toMatch(/\$\{Silent\}/);
+    expect(hooks).toMatch(/-NoPrompt/);
     expect(hooks).toMatch(/NSIS_HOOK_POSTUNINSTALL/);
     expect(hooks).toMatch(/schtasks.*PC-Temp/i);
+    expect(hooks).toMatch(/schtasks delete exit/);
   });
 
-  it("release workflow is manual dispatch with SHA-pinned actions", () => {
+  it("release workflow is manual dispatch with SHA-pinned actions and bundle asserts", () => {
     const yml = read(".github/workflows/release.yml");
     expect(yml).toMatch(/workflow_dispatch/);
     expect(yml).toMatch(/uses:\s+\S+@\S+\s+#/);
     expect(yml).toMatch(/WinRing0/i);
     expect(yml).toMatch(/PawnIO/i);
+    expect(yml).toMatch(/lhm-reader\.exe/);
+    expect(yml).toMatch(/pc-temp\.exe/);
+    expect(yml).toMatch(/\.woff2/);
+  });
+
+  it("CI builds the sidecar before Cargo and Tauri", () => {
+    const yml = read(".github/workflows/ci.yml");
+    expect(yml).toMatch(
+      /actions\/setup-dotnet@87b7050bc53ea08284295505d98d2aa94301e852/,
+    );
+    expect(yml).toMatch(/build-sidecar\.ps1/);
+    const sidecarIdx = yml.indexOf("build-sidecar");
+    const cargoIdx = yml.indexOf("Cargo tests");
+    const tauriIdx = yml.indexOf("Tauri build");
+    expect(sidecarIdx).toBeGreaterThan(-1);
+    expect(cargoIdx).toBeGreaterThan(sidecarIdx);
+    expect(tauriIdx).toBeGreaterThan(sidecarIdx);
   });
 
   it("installed app requests administrator elevation", () => {

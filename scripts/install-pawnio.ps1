@@ -2,10 +2,12 @@
 # PawnIO is never bundled; on failure we surface the manual link and exit 0 so PC-Temp still installs.
 # Official PawnIO.Setup 2.2.0 CLI (verified): PawnIO_setup.exe -install -silent (exit 0 = ok, 3010 = reboot pending).
 param(
-    [switch]$Quiet
+    [switch]$Quiet,
+    [switch]$NoPrompt
 )
 
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 
 $script:PAWNIO_VERSION = '2.2.0'
 $script:PAWNIO_SETUP_URL = "https://github.com/namazso/PawnIO.Setup/releases/download/$($script:PAWNIO_VERSION)/PawnIO_setup.exe"
@@ -47,7 +49,7 @@ function Get-PawnIOSetupExe {
         Remove-Item -Force -LiteralPath $dest
     }
     Write-InstallDetail "Downloading PawnIO $($script:PAWNIO_VERSION) from the official release..."
-    Invoke-WebRequest -Uri $script:PAWNIO_SETUP_URL -OutFile $dest -UseBasicParsing
+    Invoke-WebRequest -Uri $script:PAWNIO_SETUP_URL -OutFile $dest -UseBasicParsing -TimeoutSec 120
     return $dest
 }
 
@@ -67,6 +69,9 @@ Download the official PawnIO setup here:
 $($script:PAWNIO_MANUAL_URL)
 "@
     Write-InstallDetail $text
+    if ($NoPrompt) {
+        return
+    }
     try {
         Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
         [System.Windows.Forms.MessageBox]::Show(

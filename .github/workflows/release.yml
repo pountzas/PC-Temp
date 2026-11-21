@@ -49,6 +49,14 @@ jobs:
       - name: Build NSIS installer
         run: pnpm tauri build
 
+      - name: Assert sidecar and fonts are built
+        shell: pwsh
+        run: |
+          if (-not (Test-Path src-tauri/target/release/lhm-reader.exe)) { throw 'lhm-reader.exe missing next to pc-temp.exe' }
+          if (-not (Test-Path src-tauri/target/release/pc-temp.exe)) { throw 'pc-temp.exe missing' }
+          $fonts = Get-ChildItem -Path dist/assets -Filter '*.woff2' -ErrorAction Stop
+          if ($fonts.Count -lt 1) { throw 'no woff2 fonts in dist/assets' }
+
       - name: Assert bundle excludes WinRing0 and bundled PawnIO
         shell: pwsh
         run: |
