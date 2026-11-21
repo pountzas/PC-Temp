@@ -1,4 +1,4 @@
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 use crate::ipc::types::SensorTick;
 use crate::ipc::types::{CpuSnapshot, GpuSnapshot};
 use serde::Deserialize;
@@ -21,20 +21,20 @@ pub trait GpuSource: Send {
     fn read(&mut self) -> GpuReading;
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 const COMPACT_FIXTURE: &str = include_str!("../../../src/ipc/fixtures/compact.json");
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 fn load_compact_tick() -> SensorTick {
     serde_json::from_str(COMPACT_FIXTURE).expect("parse compact SensorTick")
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub struct MockCpu {
     tick: SensorTick,
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 impl MockCpu {
     pub fn new() -> Self {
         Self {
@@ -43,14 +43,14 @@ impl MockCpu {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 impl Default for MockCpu {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 impl CpuSource for MockCpu {
     fn read(&mut self) -> CpuReading {
         CpuReading {
@@ -59,12 +59,12 @@ impl CpuSource for MockCpu {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 pub struct MockGpu {
     tick: SensorTick,
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 impl MockGpu {
     pub fn new() -> Self {
         Self {
@@ -73,14 +73,14 @@ impl MockGpu {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 impl Default for MockGpu {
     fn default() -> Self {
         Self::new()
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, debug_assertions))]
 impl GpuSource for MockGpu {
     fn read(&mut self) -> GpuReading {
         GpuReading {
