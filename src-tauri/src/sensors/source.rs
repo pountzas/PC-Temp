@@ -51,10 +51,12 @@ impl CpuSource for MockCpu {
     }
 }
 
+#[cfg(test)]
 pub struct MockGpu {
     tick: SensorTick,
 }
 
+#[cfg(test)]
 impl MockGpu {
     pub fn new() -> Self {
         Self {
@@ -63,12 +65,14 @@ impl MockGpu {
     }
 }
 
+#[cfg(test)]
 impl Default for MockGpu {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(test)]
 impl GpuSource for MockGpu {
     fn read(&mut self) -> GpuReading {
         GpuReading {
