@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 import { Header } from "../../components/Header";
 import { Panel } from "../../components/Panel";
 import type { SensorTick, Settings } from "../../ipc/types";
+import { isGpuHot } from "../../lib/hot";
 import { CompactColumn } from "./CompactColumn";
 import { CompactFooter } from "./CompactFooter";
 import {
@@ -10,6 +11,8 @@ import {
   openSettingsPanel,
   toggleAlwaysOnTop,
 } from "./compactHeaderActions";
+import { HotChip } from "./hot/HotChip";
+import "./hot/hot.css";
 
 export type CompactViewProps = {
   tick: SensorTick | null;
@@ -55,11 +58,14 @@ const emptyGpu = {
 export function CompactView({ tick, settings }: CompactViewProps) {
   const cpu = tick?.cpu ?? emptyCpu;
   const gpu = tick?.gpu ?? emptyGpu;
+  const gpuHot = isGpuHot(tick);
+  const panelClass = gpuHot ? "compact-panel is-hot" : "compact-panel";
 
   return (
     <section data-view="compact">
-      <Panel padding={14} style={panelStyle}>
+      <Panel padding={14} className={panelClass} style={panelStyle}>
         <Header
+          chip={gpuHot ? <HotChip /> : undefined}
           buttons={[
             {
               icon: "gear",
@@ -106,9 +112,14 @@ export function CompactView({ tick, settings }: CompactViewProps) {
             modelName={gpu.name}
             units={settings.units}
             tick={tick}
+            overrides={gpuHot ? { gaugeAccent: "var(--color-hot)" } : undefined}
           />
         </div>
-        <CompactFooter tick={tick} intervalMs={settings.intervalMs} />
+        <CompactFooter
+          tick={tick}
+          intervalMs={settings.intervalMs}
+          gpuHot={gpuHot}
+        />
       </Panel>
     </section>
   );
