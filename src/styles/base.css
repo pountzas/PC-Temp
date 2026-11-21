@@ -1,4 +1,9 @@
-/* Base layout stub — HW-04 */
+/* Base document chrome — HW-03 */
+
+html,
 body {
+  background: transparent;
   margin: 0;
+  user-select: none;
+  overflow: hidden;
 }
