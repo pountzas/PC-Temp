@@ -168,56 +168,42 @@ fn apply_view_with_anchor<R: Runtime>(app: &AppHandle<R>, view: ViewMode) -> Res
     persist_view(app, view)
 }
 
-fn physical_monitor_work_areas<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<Rect>, String> {
-    app.available_monitors()
-        .map_err(|e| format!("monitors: {e}"))?
-        .into_iter()
-        .map(|m| {
-            let work = m.work_area();
-            Ok(Rect {
-                x: work.position.x as f64,
-                y: work.position.y as f64,
-                width: work.size.width as f64,
-                height: work.size.height as f64,
-            })
-        })
-        .collect()
-}
-
-fn primary_physical_work_area<R: Runtime>(app: &AppHandle<R>) -> Result<Rect, String> {
-    let monitor = app
-        .primary_monitor()
-        .map_err(|e| format!("primary monitor: {e}"))?
-        .ok_or_else(|| "no primary monitor".to_string())?;
+fn physical_work_area_of(monitor: &tauri::Monitor) -> Rect {
     let work = monitor.work_area();
-    Ok(Rect {
+    Rect {
         x: work.position.x as f64,
         y: work.position.y as f64,
         width: work.size.width as f64,
         height: work.size.height as f64,
-    })
+    }
 }
 
 fn restore_saved_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
-    let Some(position) = settings::get().position else {
+    let s = settings::get();
+    let Some(position) = s.position else {
         return Ok(());
     };
     let widget = widget_window(app)?;
-    let scale = widget
-        .scale_factor()
-        .map_err(|e| format!("scale factor: {e}"))?;
-    let (lw, lh) = view_logical_size(settings::get().view);
-    let (pw, ph) = (lw * scale, lh * scale);
-    let areas = physical_monitor_work_areas(app)?;
-    let work = match monitor_containing((position.x, position.y), &areas) {
-        Some(idx) => areas.get(idx).copied(),
-        None => None,
+    let monitors = widget
+        .available_monitors()
+        .map_err(|e| format!("monitors: {e}"))?;
+    let areas: Vec<Rect> = monitors.iter().map(physical_work_area_of).collect();
+    let (work, scale) = match monitor_containing((position.x, position.y), &areas) {
+        Some(i) => (areas[i], monitors[i].scale_factor()),
+        None => {
+            let monitor = widget
+                .primary_monitor()
+                .map_err(|e| format!("primary monitor: {e}"))?
+                .ok_or_else(|| "no primary monitor".to_string())?;
+            (physical_work_area_of(&monitor), monitor.scale_factor())
+        }
     };
-    let work = match work {
-        Some(w) => w,
-        None => primary_physical_work_area(app)?,
-    };
-    let (x, y) = clamp_top_left((position.x, position.y), (pw, ph), work);
+    let (lw, lh) = view_logical_size(s.view);
+    let (x, y) = clamp_top_left(
+        (position.x, position.y),
+        (lw * scale, lh * scale),
+        work,
+    );
     widget
         .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
         .map_err(|e| format!("set position: {e}"))
