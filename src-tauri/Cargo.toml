@@ -25,7 +25,12 @@ nvml-wrapper = "0.13"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sysinfo = "0.40"
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", default-features = false, features = [
+    "tray-icon",
+    "wry",
+    "compression",
+    "dynamic-acl",
+] }
 tauri-plugin-store = "2"
 thiserror = "2"
 tokio = { version = "1", features = ["rt", "sync", "time", "macros"] }
