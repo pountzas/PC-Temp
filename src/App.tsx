@@ -13,7 +13,7 @@ import "./styles/unfocused.css";
 
 export default function App() {
   const settings = useSettings();
-  const tick = useSensors();
+  const tick = useSensors(settings.intervalMs);
 
   useFocusClass();
   useDock();

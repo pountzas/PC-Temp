@@ -5,25 +5,30 @@ import { useEffect, useState } from "react";
 import { getSnapshot } from "./commands";
 import { SENSORS } from "./events";
 import { startMockSensorEmitter } from "./mock/emitter";
-import type { SensorTick } from "./types";
+import type { IntervalMs, SensorTick } from "./types";
 import { parseSensorTick } from "./types";
 import { isTauri, mockSensorsEnabled } from "./tauri";
 
-export function useSensors(): SensorTick | null {
+export function useSensors(intervalMs: IntervalMs = 1000): SensorTick | null {
+  const mockIntervalMs =
+    !isTauri() || mockSensorsEnabled() ? intervalMs : null;
   const [tick, setTick] = useState<SensorTick | null>(null);
 
   useEffect(() => {
     let active = true;
 
-    if (!isTauri() || mockSensorsEnabled()) {
-      const stop = startMockSensorEmitter((next) => {
-        if (active) {
-          setTick(next);
-          if (import.meta.env.DEV) {
-            console.info("[mock:sensors]", next.intervalMs, "ms tick");
+    if (mockIntervalMs !== null) {
+      const stop = startMockSensorEmitter(
+        (next) => {
+          if (active) {
+            setTick(next);
+            if (import.meta.env.DEV) {
+              console.info("[mock:sensors]", next.intervalMs, "ms tick");
+            }
           }
-        }
-      });
+        },
+        mockIntervalMs,
+      );
       return () => {
         active = false;
         stop();
@@ -33,7 +38,9 @@ export function useSensors(): SensorTick | null {
     void (async () => {
       const snapshot = await getSnapshot();
       if (active && snapshot) {
-        setTick(snapshot);
+        setTick((prev) =>
+          prev && prev.ts >= snapshot.ts ? prev : snapshot,
+        );
       }
     })();
 
@@ -47,7 +54,7 @@ export function useSensors(): SensorTick | null {
       active = false;
       void unlisten.then((fn) => fn());
     };
-  }, []);
+  }, [mockIntervalMs]);
 
   return tick;
 }
