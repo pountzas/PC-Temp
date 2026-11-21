@@ -18,13 +18,25 @@ export function hideWidget(): void {
 export async function toggleAlwaysOnTop(
   alwaysOnTop: Settings["alwaysOnTop"],
 ): Promise<void> {
-  await updateSettings({ alwaysOnTop: !alwaysOnTop });
+  try {
+    await updateSettings({ alwaysOnTop: !alwaysOnTop });
+  } catch (err: unknown) {
+    console.warn("toggleAlwaysOnTop failed:", err);
+  }
 }
 
 export async function expandView(): Promise<void> {
-  await setView("expanded");
+  try {
+    await setView("expanded");
+  } catch (err: unknown) {
+    console.warn("expandView failed:", err);
+  }
 }
 
 export async function openSettingsPanel(): Promise<void> {
-  await openSettings();
+  try {
+    await openSettings();
+  } catch (err: unknown) {
+    console.warn("openSettingsPanel failed:", err);
+  }
 }

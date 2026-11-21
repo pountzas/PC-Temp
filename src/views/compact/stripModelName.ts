@@ -1,8 +1,7 @@
 const VENDOR_PREFIXES = [
-  /^Intel\s+Core\s+/i,
-  /^AMD\s+Ryzen\s+/i,
+  /^Intel(?:\s*\(R\))?\s+Core(?:\s*\(TM\))?\s+/i,
+  /^AMD\s+/i,
   /^NVIDIA\s+GeForce\s+/i,
-  /^AMD\s+Radeon(?:\s+RX)?\s+/i,
 ] as const;
 
 export function stripModelName(fullName: string): string {

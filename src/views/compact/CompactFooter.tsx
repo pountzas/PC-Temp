@@ -20,9 +20,14 @@ const footerRow: CSSProperties = {
 };
 
 export function CompactFooter({ tick, intervalMs }: CompactFooterProps) {
+  const effectiveInterval = tick?.intervalMs ?? intervalMs;
   const left = tick
-    ? formatFooterLeft(intervalMs, tick.cpu.clockMHz, tick.gpu.coreClockMHz)
-    : formatFooterLeft(intervalMs, null, null);
+    ? formatFooterLeft(
+        effectiveInterval,
+        tick.cpu.clockMHz,
+        tick.gpu.coreClockMHz,
+      )
+    : formatFooterLeft(effectiveInterval, null, null);
   const right = tick ? formatClock(tick.ts) : "—";
 
   return (

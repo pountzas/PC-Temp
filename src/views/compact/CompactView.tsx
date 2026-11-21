@@ -1,8 +1,7 @@
 import type { CSSProperties } from "react";
 import { Header } from "../../components/Header";
 import { Panel } from "../../components/Panel";
-import { useSettings } from "../../ipc/useSettings";
-import { useSensors } from "../../ipc/useSensors";
+import type { SensorTick, Settings } from "../../ipc/types";
 import { CompactColumn } from "./CompactColumn";
 import { CompactFooter } from "./CompactFooter";
 import {
@@ -11,6 +10,11 @@ import {
   openSettingsPanel,
   toggleAlwaysOnTop,
 } from "./compactHeaderActions";
+
+export type CompactViewProps = {
+  tick: SensorTick | null;
+  settings: Settings;
+};
 
 const panelStyle: CSSProperties = {
   display: "flex",
@@ -48,10 +52,7 @@ const emptyGpu = {
   vramTotalMiB: null,
 };
 
-export function CompactView() {
-  const settings = useSettings();
-  const tick = useSensors(settings.intervalMs);
-
+export function CompactView({ tick, settings }: CompactViewProps) {
   const cpu = tick?.cpu ?? emptyCpu;
   const gpu = tick?.gpu ?? emptyGpu;
 
