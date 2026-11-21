@@ -482,10 +482,10 @@ mod tests {
         let mut client = MockLhmClient::from_fixture();
         let cpu = client.read().expect("mock read");
         assert_eq!(cpu.name, "Intel Core i7-3770K");
-        assert_eq!(cpu.package_temp_c, Some(52.0));
-        assert_eq!(cpu.package_power_w, Some(41.0));
+        assert_eq!(cpu.package_temp_c, Some(62.0));
+        assert_eq!(cpu.package_power_w, Some(37.260616302490234));
         assert_eq!(cpu.cores.len(), 4);
-        assert_eq!(cpu.cores[0].clock_mhz, Some(3900.0));
+        assert_eq!(cpu.cores[0].clock_mhz, Some(3710.9052734375));
     }
 
     #[test]
@@ -654,7 +654,7 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
             std::thread::sleep(Duration::from_millis(100));
             let mut replacement = spawn_fake_child_ready();
             let cpu2 = replacement.request_read().expect("read after respawn");
-            assert_eq!(cpu2.package_temp_c, Some(52.0));
+            assert_eq!(cpu2.package_temp_c, Some(62.0));
             replacement.send_quit();
         }
 

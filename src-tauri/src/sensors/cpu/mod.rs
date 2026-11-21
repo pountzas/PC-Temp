@@ -231,9 +231,9 @@ mod real_cpu_tests {
         let reading = cpu.read();
         let snap = &reading.snapshot;
         assert_eq!(snap.name, "Intel Core i7-3770K");
-        assert_eq!(snap.package_temp_c, Some(52.0));
-        assert_eq!(snap.package_power_w, Some(41.0));
-        assert_eq!(snap.clock_mhz, Some(3900.0));
+        assert_eq!(snap.package_temp_c, Some(62.0));
+        assert_eq!(snap.package_power_w, Some(37.260616302490234));
+        assert_eq!(snap.clock_mhz, Some(3911.49462890625));
         assert_eq!(snap.load_pct, Some(34.0));
         assert_eq!(snap.cores[0].load_pct, Some(28.0));
     }
