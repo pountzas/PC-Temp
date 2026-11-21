@@ -63,13 +63,15 @@ fn persist_position(position: WindowPosition) -> Result<(), String> {
     settings::update(patch).map(|_| ())
 }
 
-fn persist_view(view: ViewMode) -> Result<(), String> {
+fn persist_view<R: Runtime>(app: &AppHandle<R>, view: ViewMode) -> Result<(), String> {
     let mut patch = empty_settings_patch();
     patch.view = Some(view);
     if let Some(undocked) = layout::undocked_view_for(view) {
         patch.last_undocked_view = Some(undocked);
     }
-    settings::update(patch).map(|_| ())
+    let updated = settings::update(patch)?;
+    app.emit(events::SETTINGS_CHANGED, &updated)
+        .map_err(|e| format!("emit settings-changed: {e}"))
 }
 
 fn logical_outer_rect<R: Runtime>(
@@ -122,6 +124,20 @@ fn set_logical_outer_position<R: Runtime>(
         .map_err(|e| format!("set position: {e}"))
 }
 
+/// Place a window using logical coords measured at `logical_scale` as physical screen pixels.
+fn set_screen_physical_position<R: Runtime>(
+    window: &WebviewWindow<R>,
+    x_logical: f64,
+    y_logical: f64,
+    logical_scale: f64,
+) -> Result<(), String> {
+    let phys_x = (x_logical * logical_scale).round() as i32;
+    let phys_y = (y_logical * logical_scale).round() as i32;
+    window
+        .set_position(PhysicalPosition::new(phys_x, phys_y))
+        .map_err(|e| format!("set position: {e}"))
+}
+
 fn apply_view_size<R: Runtime>(
     window: &WebviewWindow<R>,
     view: ViewMode,
@@ -146,8 +162,7 @@ fn apply_view_with_anchor<R: Runtime>(app: &AppHandle<R>, view: ViewMode) -> Res
     let work = work_area_rect(&widget)?;
     let (x, y) = clamp_top_left((logical.x, logical.y), (w, h), work);
     set_logical_outer_position(&widget, x, y)?;
-    persist_view(view)?;
-    Ok(())
+    persist_view(app, view)
 }
 
 fn restore_saved_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
@@ -277,6 +292,9 @@ pub fn open_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let settings_win = settings_window(app)?;
     let widget_rect = logical_outer_rect(&widget)?;
     let work = work_area_rect(&widget)?;
+    let widget_scale = widget
+        .scale_factor()
+        .map_err(|e| format!("widget scale: {e}"))?;
     let (x, y) = settings_panel_origin(
         widget_rect,
         SETTINGS_WIDTH_PX,
@@ -284,7 +302,7 @@ pub fn open_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         SETTINGS_GAP_PX,
         work,
     );
-    set_logical_outer_position(&settings_win, x, y)?;
+    set_logical_origin_on_window(&settings_win, x, y, widget_scale)?;
     settings_win
         .show()
         .map_err(|e| format!("show settings: {e}"))?;
