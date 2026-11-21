@@ -1,3 +1,13 @@
+import { PrimitivesDemo } from "./components/PrimitivesDemo";
+
+function isPrimitivesDemoRoute(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return (
+    new URLSearchParams(window.location.search).get("demo") === "primitives"
+  );
+}
 import { CompactView } from "./views/compact/CompactView";
 import { ExpandedView } from "./views/expanded/ExpandedView";
 import { PillView } from "./views/pill/PillView";
@@ -18,6 +28,10 @@ export default function App() {
   useFocusClass();
   useDock();
   useSettingsDim(settings);
+
+  if (isPrimitivesDemoRoute()) {
+    return <PrimitivesDemo />;
+  }
 
   switch (settings.view) {
     case "expanded":
