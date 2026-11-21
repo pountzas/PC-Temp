@@ -8,4 +8,12 @@ describe("formatCoreThreadLabel", () => {
     const cpu = (expanded as { cpu: CpuSnapshot }).cpu;
     expect(formatCoreThreadLabel(cpu)).toBe("4C/8T");
   });
+
+  it("falls back to core count when threads array is empty", () => {
+    const cpu: CpuSnapshot = {
+      ...(expanded as { cpu: CpuSnapshot }).cpu,
+      threads: [],
+    };
+    expect(formatCoreThreadLabel(cpu)).toBe("4C/4T");
+  });
 });

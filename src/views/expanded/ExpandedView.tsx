@@ -3,7 +3,7 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { SensorTick } from "../../ipc/types";
 import { openSettings, updateSettings } from "../../ipc/commands";
-import { useSettings } from "../../ipc/useSettings";
+import type { Settings } from "../../ipc/types";
 import { isTauri, mockSensorsEnabled } from "../../ipc/tauri";
 import { setView } from "../../window/view";
 import { Header } from "../../components/Header";
@@ -11,9 +11,11 @@ import { Panel } from "../../components/Panel";
 import { CpuSection } from "./CpuSection";
 import { ExpandedFooter } from "./ExpandedFooter";
 import { GpuSection } from "./GpuSection";
+import { runHeaderAction } from "./headerAction";
 
 export type ExpandedViewProps = {
   tick: SensorTick | null;
+  settings: Settings;
 };
 
 function hideWidget(): void {
@@ -23,27 +25,33 @@ function hideWidget(): void {
   void getCurrentWindow().hide();
 }
 
-export function ExpandedView({ tick }: ExpandedViewProps) {
-  const settings = useSettings();
+export function ExpandedView({ tick, settings }: ExpandedViewProps) {
   const intervalMs = tick?.intervalMs ?? settings.intervalMs;
 
   const headerButtons = [
     {
       icon: "gear" as const,
       label: "Settings",
-      onClick: () => void openSettings(),
+      onClick: () => {
+        runHeaderAction(() => openSettings());
+      },
     },
     {
       icon: "collapse" as const,
       label: "Collapse",
-      onClick: () => void setView("compact"),
+      onClick: () => {
+        runHeaderAction(() => setView("compact"));
+      },
     },
     {
       icon: "pin" as const,
       label: "Always on top",
       active: settings.alwaysOnTop,
-      onClick: () =>
-        void updateSettings({ alwaysOnTop: !settings.alwaysOnTop }),
+      onClick: () => {
+        runHeaderAction(() =>
+          updateSettings({ alwaysOnTop: !settings.alwaysOnTop }),
+        );
+      },
     },
     { icon: "close" as const, label: "Hide", onClick: hideWidget },
   ];

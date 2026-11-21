@@ -9,10 +9,12 @@ export function sliceHistory(
   intervalMs: IntervalMs,
 ): (Pct | null)[] {
   const count = historyPointCount(intervalMs);
-  if (values.length <= count) {
-    return values;
+  const tail = values.length > count ? values.slice(-count) : values;
+  if (tail.length >= count) {
+    return tail;
   }
-  return values.slice(-count);
+  const pad = Array<Pct | null>(count - tail.length).fill(null);
+  return [...pad, ...tail];
 }
 
 export function intervalLiveLabel(intervalMs: IntervalMs): string {

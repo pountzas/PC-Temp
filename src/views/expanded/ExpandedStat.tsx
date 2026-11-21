@@ -36,14 +36,16 @@ export function ExpandedStat({ label, text, unit }: ExpandedStatProps) {
         }}
       >
         {text}
-        <span
-          style={{
-            fontSize: 11,
-            color: "var(--color-muted)",
-          }}
-        >
-          {unit}
-        </span>
+        {!faint ? (
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--color-muted)",
+            }}
+          >
+            {unit}
+          </span>
+        ) : null}
       </div>
     </div>
   );

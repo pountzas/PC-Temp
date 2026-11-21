@@ -19,6 +19,14 @@ describe("historyWindow", () => {
     expect(sliceHistory(series, 1000).at(-1)).toBe(79);
   });
 
+  it("left-pads with nulls when fewer samples than the window", () => {
+    const sparse = [10, 20, 30];
+    const padded = sliceHistory(sparse, 1000);
+    expect(padded).toHaveLength(60);
+    expect(padded.slice(0, 57).every((v) => v === null)).toBe(true);
+    expect(padded.at(-1)).toBe(30);
+  });
+
   it("labels footer update interval", () => {
     expect(intervalLiveLabel(1000)).toBe("1s");
     expect(intervalLiveLabel(2000)).toBe("2s");

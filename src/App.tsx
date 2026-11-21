@@ -47,7 +47,7 @@ export default function App() {
 
   switch (settings.view) {
     case "expanded":
-      return <ExpandedView tick={tick} />;
+      return <ExpandedView tick={tick} settings={settings} />;
     case "pill":
       return <PillView tick={tick} />;
     case "compact":
