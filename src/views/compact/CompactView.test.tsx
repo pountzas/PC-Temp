@@ -102,4 +102,32 @@ describe("CompactView", () => {
       "UPDATE 5s · 3.90 / 1.15 GHz",
     );
   });
+
+  it("enters gpu hot state from hot fixture", () => {
+    const { container } = renderCompact(FIXTURES.hot);
+    expect(container.querySelector(".compact-panel.is-hot")).toBeTruthy();
+    expect(screen.getByTestId("gpu-hot-chip")).toBeTruthy();
+    expect(screen.getByTestId("compact-footer-left").textContent).toBe(
+      "TEMP LIMIT · 1.02 GHz · FAN 78%",
+    );
+    expect(
+      screen.getByTestId("compact-column-cpu").getAttribute("data-temp-level"),
+    ).toBe("normal");
+    expect(
+      screen.getByTestId("compact-column-gpu").getAttribute("data-temp-level"),
+    ).toBe("hot");
+    const gpuGauge = screen
+      .getByTestId("compact-column-gpu")
+      .querySelector('[data-testid="arc-gauge"]');
+    if (!(gpuGauge instanceof HTMLElement)) {
+      throw new Error("expected gpu arc gauge");
+    }
+    expect(gpuGauge.innerHTML).toContain('stroke="var(--color-hot)"');
+  });
+
+  it("never puts watts in the hot footer", () => {
+    renderCompact(FIXTURES.hot);
+    const left = screen.getByTestId("compact-footer-left").textContent;
+    expect(left).not.toMatch(/\d+\s*W\b/i);
+  });
 });

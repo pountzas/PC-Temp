@@ -1,11 +1,13 @@
 import type { CSSProperties } from "react";
 import type { IntervalMs, SensorTick } from "../../ipc/types";
 import { formatClock } from "../../lib/format";
+import { formatHotFooterLeft } from "./hot/formatHotFooterLeft";
 import { formatFooterLeft } from "./formatFooterLeft";
 
 export type CompactFooterProps = {
   tick: SensorTick | null;
   intervalMs: IntervalMs;
+  gpuHot?: boolean;
 };
 
 const footerRow: CSSProperties = {
@@ -19,15 +21,22 @@ const footerRow: CSSProperties = {
   color: "var(--color-faint)",
 };
 
-export function CompactFooter({ tick, intervalMs }: CompactFooterProps) {
+export function CompactFooter({
+  tick,
+  intervalMs,
+  gpuHot = false,
+}: CompactFooterProps) {
   const effectiveInterval = tick?.intervalMs ?? intervalMs;
-  const left = tick
-    ? formatFooterLeft(
-        effectiveInterval,
-        tick.cpu.clockMHz,
-        tick.gpu.coreClockMHz,
-      )
-    : formatFooterLeft(effectiveInterval, null, null);
+  const left =
+    tick && gpuHot
+      ? formatHotFooterLeft(tick.gpu.coreClockMHz, tick.gpu.fanPct)
+      : tick
+        ? formatFooterLeft(
+            effectiveInterval,
+            tick.cpu.clockMHz,
+            tick.gpu.coreClockMHz,
+          )
+        : formatFooterLeft(effectiveInterval, null, null);
   const right = tick ? formatClock(tick.ts) : "—";
 
   return (
