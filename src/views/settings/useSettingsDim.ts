@@ -9,6 +9,8 @@ import { isTauri, mockSensorsEnabled } from "../../ipc/tauri";
 import "./settings-dim.css";
 
 const DIMMED_CLASS = "is-settings-dimmed";
+const PANEL_ALPHA_VAR = "--panel-bg-alpha";
+const ACCENT_VAR = "--color-accent";
 
 function widgetRoot(): HTMLElement {
   return document.getElementById("root") ?? document.documentElement;
@@ -16,14 +18,14 @@ function widgetRoot(): HTMLElement {
 
 export function useSettingsDim(settings: Settings): void {
   useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--panel-bg-alpha",
-      String(settings.opacityPct / 100),
-    );
-    document.documentElement.style.setProperty(
-      "--color-accent",
-      settings.accent,
-    );
+    const root = document.documentElement;
+    root.style.setProperty(PANEL_ALPHA_VAR, String(settings.opacityPct / 100));
+    root.style.setProperty(ACCENT_VAR, settings.accent);
+
+    return () => {
+      root.style.removeProperty(PANEL_ALPHA_VAR);
+      root.style.removeProperty(ACCENT_VAR);
+    };
   }, [settings.opacityPct, settings.accent]);
 
   useEffect(() => {

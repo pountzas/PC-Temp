@@ -4,6 +4,7 @@ import { Panel } from "../../components/Panel";
 import { IconButton } from "../../components/IconButton";
 import { closeSettings, updateSettings } from "../../ipc/commands";
 import type { AccentColor, IntervalMs, Settings, Units } from "../../ipc/types";
+import { applySettingsPatch } from "./applySettingsPatch";
 import { Segmented } from "./Segmented";
 import { Slider } from "./Slider";
 import { Swatches } from "./Swatches";
@@ -12,6 +13,8 @@ import { Toggle } from "./Toggle";
 export type SettingsViewProps = {
   settings: Settings;
 };
+
+const CLICK_THROUGH_SUBLABEL = "Clicks pass through · turn off from tray";
 
 const labelStyle = {
   fontFamily: "var(--font-sans)",
@@ -93,19 +96,20 @@ export function SettingsView({ settings }: SettingsViewProps) {
   const [pendingAutostart, setPendingAutostart] = useState<boolean | null>(
     null,
   );
+  const [autostartBusy, setAutostartBusy] = useState(false);
   const startWithWindows = pendingAutostart ?? settings.startWithWindows;
 
-  const patch = (partial: Parameters<typeof updateSettings>[0]) => {
-    void updateSettings(partial);
-  };
-
   const handleAutostart = async (next: boolean) => {
+    setAutostartBusy(true);
     setPendingAutostart(next);
     try {
       await updateSettings({ startWithWindows: next });
       setPendingAutostart(null);
-    } catch {
+    } catch (error) {
+      console.warn("Start with Windows toggle failed", error);
       setPendingAutostart(null);
+    } finally {
+      setAutostartBusy(false);
     }
   };
 
@@ -119,7 +123,6 @@ export function SettingsView({ settings }: SettingsViewProps) {
           display: "flex",
           flexDirection: "column",
           borderRadius: "var(--radius-md)",
-          ["--panel-bg-alpha" as string]: settings.opacityPct / 100,
         }}
       >
         <header
@@ -155,7 +158,7 @@ export function SettingsView({ settings }: SettingsViewProps) {
               label="Opacity"
               value={settings.opacityPct}
               onChange={(opacityPct) => {
-                patch({ opacityPct });
+                void applySettingsPatch({ opacityPct });
               }}
             />
           </div>
@@ -163,17 +166,13 @@ export function SettingsView({ settings }: SettingsViewProps) {
           <SettingsRow
             withBorder
             label="Click-through"
-            subLabel={
-              !settings.clickThrough
-                ? "Clicks pass through · turn off from tray"
-                : undefined
-            }
+            subLabel={CLICK_THROUGH_SUBLABEL}
           >
             <Toggle
               label="Click-through"
               checked={settings.clickThrough}
               onChange={(clickThrough) => {
-                patch({ clickThrough });
+                void applySettingsPatch({ clickThrough });
               }}
             />
           </SettingsRow>
@@ -183,7 +182,7 @@ export function SettingsView({ settings }: SettingsViewProps) {
               label="Always on top"
               checked={settings.alwaysOnTop}
               onChange={(alwaysOnTop) => {
-                patch({ alwaysOnTop });
+                void applySettingsPatch({ alwaysOnTop });
               }}
             />
           </SettingsRow>
@@ -197,7 +196,7 @@ export function SettingsView({ settings }: SettingsViewProps) {
                 { value: "F", label: "°F" },
               ]}
               onChange={(units) => {
-                patch({ units });
+                void applySettingsPatch({ units });
               }}
             />
           </SettingsRow>
@@ -208,7 +207,7 @@ export function SettingsView({ settings }: SettingsViewProps) {
               value={settings.intervalMs}
               options={[...INTERVAL_OPTIONS]}
               onChange={(intervalMs) => {
-                patch({ intervalMs });
+                void applySettingsPatch({ intervalMs });
               }}
             />
           </SettingsRow>
@@ -221,6 +220,8 @@ export function SettingsView({ settings }: SettingsViewProps) {
             <Toggle
               label="Start with Windows"
               checked={startWithWindows}
+              disabled={autostartBusy}
+              busy={autostartBusy}
               onChange={(checked) => {
                 void handleAutostart(checked);
               }}
@@ -231,7 +232,7 @@ export function SettingsView({ settings }: SettingsViewProps) {
             <Swatches
               value={settings.accent}
               onChange={(accent: AccentColor) => {
-                patch({ accent });
+                void applySettingsPatch({ accent });
               }}
             />
           </SettingsRow>

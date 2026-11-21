@@ -1,4 +1,6 @@
-import type { ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
+
+const THROTTLE_MS = 100;
 
 export type SliderProps = {
   label: string;
@@ -15,12 +17,37 @@ export function Slider({
   max = 100,
   onChange,
 }: SliderProps) {
-  const pct = Math.min(max, Math.max(min, value));
+  const [draftOverride, setDraftOverride] = useState<number | null>(null);
+  const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const onChangeRef = useRef(onChange);
+
+  useEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
+
+  useEffect(() => {
+    return () => {
+      if (throttleRef.current !== null) {
+        clearTimeout(throttleRef.current);
+      }
+    };
+  }, []);
+
+  const raw =
+    draftOverride !== null && draftOverride !== value ? draftOverride : value;
+  const pct = Math.min(max, Math.max(min, raw));
   const fillWidth = max > min ? ((pct - min) / (max - min)) * 110 : 0;
   const thumbLeft = Math.max(0, Math.min(110 - 14, fillWidth - 7));
 
   const handleChange = (event: ChangeEvent<HTMLInputElement>) => {
-    onChange(Number(event.target.value));
+    const next = Number(event.target.value);
+    setDraftOverride(next);
+    if (throttleRef.current !== null) {
+      clearTimeout(throttleRef.current);
+    }
+    throttleRef.current = setTimeout(() => {
+      onChangeRef.current(next);
+    }, THROTTLE_MS);
   };
 
   return (

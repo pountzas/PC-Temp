@@ -48,25 +48,61 @@ describe("useSettingsDim", () => {
     vi.clearAllMocks();
   });
 
-  it("sets panel background alpha and accent from settings on the widget root", async () => {
-    const settings = {
-      ...defaultSettings(),
+  it.each([
+    {
       opacityPct: 72,
       accent: "#B65CFF" as const,
-    };
+      alpha: "0.72",
+    },
+    {
+      opacityPct: 0,
+      accent: "#22E5FF" as const,
+      alpha: "0",
+    },
+    {
+      opacityPct: 100,
+      accent: "#FFB020" as const,
+      alpha: "1",
+    },
+  ])(
+    "sets panel alpha $alpha and accent $accent from settings",
+    async ({ opacityPct, accent, alpha }) => {
+      const settings = { ...defaultSettings(), opacityPct, accent };
 
-    renderHook(() => {
-      useSettingsDim(settings);
+      renderHook(() => {
+        useSettingsDim(settings);
+      });
+
+      await waitFor(() => {
+        expect(
+          document.documentElement.style.getPropertyValue("--panel-bg-alpha"),
+        ).toBe(alpha);
+      });
+      expect(
+        document.documentElement.style.getPropertyValue("--color-accent"),
+      ).toBe(accent);
+    },
+  );
+
+  it("clears CSS variables on unmount", async () => {
+    const { unmount } = renderHook(() => {
+      useSettingsDim(defaultSettings());
     });
 
     await waitFor(() => {
       expect(
         document.documentElement.style.getPropertyValue("--panel-bg-alpha"),
-      ).toBe("0.72");
+      ).not.toBe("");
     });
+
+    unmount();
+
+    expect(
+      document.documentElement.style.getPropertyValue("--panel-bg-alpha"),
+    ).toBe("");
     expect(
       document.documentElement.style.getPropertyValue("--color-accent"),
-    ).toBe("#B65CFF");
+    ).toBe("");
   });
 
   it("dims widget content while settings window is open", async () => {
