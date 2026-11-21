@@ -44,8 +44,19 @@ describe("SensorTick IPC contract", () => {
         expect(Object.keys(core).sort()).toEqual(CORE_KEYS);
       }
       expect(Object.keys(tick.gpu).sort()).toEqual(GPU_KEYS);
+      expect(Object.keys(tick.history).sort()).toEqual(["cpuLoad", "gpuLoad"]);
       expect(tick.history.cpuLoad).toHaveLength(60);
       expect(tick.history.gpuLoad).toHaveLength(60);
+      for (const thread of tick.cpu.threads ?? []) {
+        expect(Object.keys(thread).sort()).toEqual(["index", "loadPct"]);
+      }
+      for (const alert of tick.alerts) {
+        expect(Object.keys(alert).sort()).toEqual([
+          "component",
+          "level",
+          "tempC",
+        ]);
+      }
     },
   );
 
