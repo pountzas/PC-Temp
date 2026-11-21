@@ -22,8 +22,7 @@ const shell: CSSProperties = {
 const divider: CSSProperties = {
   width: 1,
   height: 20,
-  background: "var(--color-text)",
-  opacity: 0.12,
+  background: "rgba(255, 255, 255, 0.12)",
   flexShrink: 0,
 };
 
