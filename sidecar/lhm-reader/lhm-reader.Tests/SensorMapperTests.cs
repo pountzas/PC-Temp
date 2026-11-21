@@ -15,15 +15,17 @@ public sealed class SensorMapperTests
         var snapshot = SensorMapper.Map(cpuName, sensors);
 
         Assert.Equal("Intel Core i7-3770K", snapshot.Name);
-        Assert.Equal(74, snapshot.PackageTempC);
-        Assert.InRange(snapshot.PackagePowerW!.Value, 49.01, 49.03);
+        Assert.Equal(62, snapshot.PackageTempC);
+        Assert.InRange(snapshot.PackagePowerW!.Value, 37.25, 37.27);
         Assert.Equal(4, snapshot.Cores.Count);
 
-        Assert.Equal(72.0, snapshot.Cores[0].TempC!.Value);
+        Assert.Equal(56.0, snapshot.Cores[0].TempC!.Value);
         Assert.InRange(snapshot.Cores[0].ClockMHz!.Value, 3710.9, 3711.0);
-        Assert.Equal(76.0, snapshot.Cores[1].TempC!.Value);
-        Assert.Equal(74.0, snapshot.Cores[2].TempC!.Value);
-        Assert.Equal(68.0, snapshot.Cores[3].TempC!.Value);
+        Assert.Equal(60.0, snapshot.Cores[1].TempC!.Value);
+        Assert.Equal(65.0, snapshot.Cores[2].TempC!.Value);
+        Assert.Equal(62.0, snapshot.Cores[3].TempC!.Value);
+        Assert.InRange(snapshot.Cores[2].ClockMHz!.Value, 3911.4, 3911.5);
+        Assert.InRange(snapshot.Cores[3].ClockMHz!.Value, 3811.1, 3811.3);
     }
 
     [Fact]
@@ -32,8 +34,10 @@ public sealed class SensorMapperTests
         var (_, sensors) = LoadFixture("i7-3770K.json");
         Assert.True(sensors.Count > 10);
         var snapshot = SensorMapper.Map("Intel Core i7-3770K", sensors);
-        Assert.Equal(74, snapshot.PackageTempC);
+        Assert.Equal(62, snapshot.PackageTempC);
         Assert.Contains(sensors, s => s.Type == "Load" && s.Name == "CPU Total");
+        Assert.Contains(sensors, s => s.Type == "Temperature" && s.Name == "Core Max");
+        Assert.Equal(62, snapshot.PackageTempC); // CPU Package, not Core Max (65)
     }
 
     [Fact]
@@ -57,20 +61,8 @@ public sealed class SensorMapperTests
     [Fact]
     public void protocol_json_matches_recorded_rust_fixture()
     {
-        var sensors = new List<SensorSnapshot>
-        {
-            new SensorSnapshot("Temperature", "CPU Package", 52),
-            new SensorSnapshot("Temperature", "CPU Core #1", 50),
-            new SensorSnapshot("Temperature", "CPU Core #2", 51),
-            new SensorSnapshot("Temperature", "CPU Core #3", 49),
-            new SensorSnapshot("Temperature", "CPU Core #4", 52),
-            new SensorSnapshot("Power", "CPU Package", 41),
-            new SensorSnapshot("Clock", "CPU Core #1", 3900),
-            new SensorSnapshot("Clock", "CPU Core #2", 3900),
-            new SensorSnapshot("Clock", "CPU Core #3", 3850),
-            new SensorSnapshot("Clock", "CPU Core #4", 3900),
-        };
-        var snapshot = SensorMapper.Map("Intel Core i7-3770K", sensors);
+        var (cpuName, sensors) = LoadFixture("i7-3770K.json");
+        var snapshot = SensorMapper.Map(cpuName, sensors);
         var json = ProtocolJson.SerializeSuccess(snapshot);
         var expected = File.ReadAllText(
             Path.Combine(AppContext.BaseDirectory, "fixtures", "lhm_read.json")).Trim();
@@ -80,13 +72,13 @@ public sealed class SensorMapperTests
         using var doc = JsonDocument.Parse(json);
         Assert.True(doc.RootElement.GetProperty("ok").GetBoolean());
         var cpu = doc.RootElement.GetProperty("cpu");
-        Assert.Equal(52, cpu.GetProperty("packageTempC").GetDouble());
-        Assert.Equal(41, cpu.GetProperty("packagePowerW").GetDouble());
+        Assert.Equal(62, cpu.GetProperty("packageTempC").GetDouble());
+        Assert.InRange(cpu.GetProperty("packagePowerW").GetDouble(), 37.25, 37.27);
         Assert.False(cpu.TryGetProperty("driver", out _));
 
         var cores = cpu.GetProperty("cores");
         Assert.Equal(4, cores.GetArrayLength());
-        Assert.Equal(3900, cores[0].GetProperty("clockMHz").GetDouble());
+        Assert.InRange(cores[0].GetProperty("clockMHz").GetDouble(), 3710.9, 3711.0);
     }
 
     [Fact]

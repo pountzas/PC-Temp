@@ -4,137 +4,137 @@
     {
       "type": "Load",
       "name": "CPU Core #1 Thread #1",
-      "value": 100
+      "value": 39.3400002
     },
     {
       "type": "Load",
       "name": "CPU Core #1 Thread #2",
-      "value": 100
+      "value": 39.3400002
     },
     {
       "type": "Load",
       "name": "CPU Core #2 Thread #1",
-      "value": 100
+      "value": 54.9199982
     },
     {
       "type": "Load",
       "name": "CPU Core #2 Thread #2",
-      "value": 100
+      "value": 39.3400002
     },
     {
       "type": "Load",
       "name": "CPU Core #3 Thread #1",
-      "value": 100
+      "value": 67.2099991
     },
     {
       "type": "Load",
       "name": "CPU Core #3 Thread #2",
-      "value": 100
+      "value": 41.7999992
     },
     {
       "type": "Load",
       "name": "CPU Core #4 Thread #1",
-      "value": 100
+      "value": 60.6599998
     },
     {
       "type": "Load",
       "name": "CPU Core #4 Thread #2",
-      "value": 100
+      "value": 41.7999992
     },
     {
       "type": "Load",
       "name": "CPU Total",
-      "value": 100
+      "value": 48.0499992
     },
     {
       "type": "Load",
       "name": "CPU Core Max",
-      "value": 100
+      "value": 67.2099991
     },
     {
       "type": "Temperature",
       "name": "Core Max",
-      "value": 76
+      "value": 65
     },
     {
       "type": "Temperature",
       "name": "Core Average",
-      "value": 72.5
+      "value": 60.75
     },
     {
       "type": "Temperature",
       "name": "CPU Core #1",
-      "value": 72
+      "value": 56
     },
     {
       "type": "Temperature",
       "name": "CPU Core #2",
-      "value": 76
+      "value": 60
     },
     {
       "type": "Temperature",
       "name": "CPU Core #3",
-      "value": 74
+      "value": 65
     },
     {
       "type": "Temperature",
       "name": "CPU Core #4",
-      "value": 68
+      "value": 62
     },
     {
       "type": "Temperature",
       "name": "CPU Package",
-      "value": 74
+      "value": 62
     },
     {
       "type": "Temperature",
       "name": "CPU Core #1 Distance to TjMax",
-      "value": 33
+      "value": 49
     },
     {
       "type": "Temperature",
       "name": "CPU Core #2 Distance to TjMax",
-      "value": 29
+      "value": 45
     },
     {
       "type": "Temperature",
       "name": "CPU Core #3 Distance to TjMax",
-      "value": 31
+      "value": 40
     },
     {
       "type": "Temperature",
       "name": "CPU Core #4 Distance to TjMax",
-      "value": 37
+      "value": 43
     },
     {
       "type": "Clock",
       "name": "CPU Core #1",
-      "value": 3710.90552
+      "value": 3710.90527
     },
     {
       "type": "Clock",
       "name": "CPU Core #2",
-      "value": 3710.90552
+      "value": 3710.90527
     },
     {
       "type": "Clock",
       "name": "CPU Core #3",
-      "value": 3710.90552
+      "value": 3911.49463
     },
     {
       "type": "Clock",
       "name": "CPU Core #4",
-      "value": 3710.90552
+      "value": 3811.19995
     },
     {
       "type": "Power",
       "name": "CPU Package",
-      "value": 49.0171661
+      "value": 37.2606163
     },
     {
       "type": "Power",
       "name": "CPU Cores",
-      "value": 41.3844261
+      "value": 30.3027229
     },
     {
       "type": "Power",
@@ -149,32 +149,32 @@
     {
       "type": "Voltage",
       "name": "CPU Core",
-      "value": 1.15087891
+      "value": 1.16088867
     },
     {
       "type": "Voltage",
       "name": "CPU Core #1",
-      "value": 1.15087891
+      "value": 1.15588379
     },
     {
       "type": "Voltage",
       "name": "CPU Core #2",
-      "value": 1.15087891
+      "value": 1.15588379
     },
     {
       "type": "Voltage",
       "name": "CPU Core #3",
-      "value": 1.15087891
+      "value": 1.16088867
     },
     {
       "type": "Voltage",
       "name": "CPU Core #4",
-      "value": 1.15087891
+      "value": 1.16088867
     },
     {
       "type": "Clock",
       "name": "Bus Speed",
-      "value": 100.294746
+      "value": 100.294731
     }
   ]
 }

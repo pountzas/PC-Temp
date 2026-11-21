@@ -1,1 +1,1 @@
-{"ok":true,"cpu":{"name":"Intel Core i7-3770K","packageTempC":52,"packagePowerW":41,"cores":[{"index":0,"tempC":50,"clockMHz":3900},{"index":1,"tempC":51,"clockMHz":3900},{"index":2,"tempC":49,"clockMHz":3850},{"index":3,"tempC":52,"clockMHz":3900}]}}
+{"ok":true,"cpu":{"name":"Intel Core i7-3770K","packageTempC":62,"packagePowerW":37.260616302490234,"cores":[{"index":0,"tempC":56,"clockMHz":3710.9052734375},{"index":1,"tempC":60,"clockMHz":3710.9052734375},{"index":2,"tempC":65,"clockMHz":3911.49462890625},{"index":3,"tempC":62,"clockMHz":3811.199951171875}]}}
