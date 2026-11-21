@@ -174,6 +174,60 @@ mod tests {
             .join(name)
     }
 
+    const SENSOR_FIXTURES: &[&str] = &[
+        "compact.json",
+        "expanded.json",
+        "warn.json",
+        "hot.json",
+        "no-nvml.json",
+        "no-pawnio.json",
+    ];
+
+    fn json_values_equal(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+        use serde_json::Value;
+        match (a, b) {
+            (Value::Number(na), Value::Number(nb)) => match (na.as_f64(), nb.as_f64()) {
+                (Some(x), Some(y)) => x == y,
+                _ => na == nb,
+            },
+            (Value::Object(map_a), Value::Object(map_b)) => {
+                map_a.len() == map_b.len()
+                    && map_a.keys().all(|k| {
+                        map_b
+                            .get(k)
+                            .map(|v| json_values_equal(&map_a[k], v))
+                            .unwrap_or(false)
+                    })
+            }
+            (Value::Array(arr_a), Value::Array(arr_b)) => {
+                arr_a.len() == arr_b.len()
+                    && arr_a
+                        .iter()
+                        .zip(arr_b.iter())
+                        .all(|(x, y)| json_values_equal(x, y))
+            }
+            _ => a == b,
+        }
+    }
+
+    #[test]
+    fn sensor_tick_serialises_to_identical_json_for_every_fixture() {
+        for name in SENSOR_FIXTURES {
+            let raw = fs::read_to_string(fixture_path(name))
+                .unwrap_or_else(|e| panic!("read {name}: {e}"));
+            let fixture: serde_json::Value =
+                serde_json::from_str(&raw).unwrap_or_else(|e| panic!("parse {name}: {e}"));
+            let tick: SensorTick =
+                serde_json::from_str(&raw).unwrap_or_else(|e| panic!("deserialize {name}: {e}"));
+            let serialised =
+                serde_json::to_value(&tick).unwrap_or_else(|e| panic!("serialize {name}: {e}"));
+            assert!(
+                json_values_equal(&serialised, &fixture),
+                "{name}: serialised SensorTick must match fixture JSON"
+            );
+        }
+    }
+
     #[test]
     fn sensor_tick_round_trips_compact_fixture() {
         let raw = fs::read_to_string(fixture_path("compact.json")).expect("read compact");

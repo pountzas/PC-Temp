@@ -48,8 +48,13 @@ mod tests {
     #[test]
     fn reads_recorded_lhm_fixture() {
         let raw = fs::read_to_string(fixture_path("lhm_read.json")).expect("fixture");
+        let fixture: serde_json::Value = serde_json::from_str(&raw).expect("fixture json");
+        let expected_clock = fixture["cpu"]["cores"][0]["clockMHz"]
+            .as_f64()
+            .expect("cores[0].clockMHz in fixture");
         let resp = parse_response(&raw).expect("parse");
         assert!(resp.ok);
-        assert!(resp.cpu.is_some());
+        let cpu = resp.cpu.as_ref().expect("cpu payload");
+        assert_eq!(cpu.cores[0].clock_mhz, Some(expected_clock));
     }
 }
