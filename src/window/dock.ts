@@ -19,6 +19,12 @@ export const UNDOCK_PX = 40;
 export const PILL_LOGICAL_WIDTH = 220;
 export const PILL_LOGICAL_HEIGHT = 44;
 
+// Keep in sync with view_logical_size in src-tauri/src/window/layout.rs
+export const UNDOCKED_LOGICAL_WIDTH: Record<UndockedView, number> = {
+  compact: 320,
+  expanded: 420,
+};
+
 export type PhysicalRect = {
   x: number;
   y: number;
@@ -28,12 +34,13 @@ export type PhysicalRect = {
 
 export type DecideDockState = {
   view: ViewMode;
+  lastUndockedView: UndockedView;
 };
 
 export type DecideDockResult =
   | { action: "stay" }
   | { action: "dock"; x: number; y: number }
-  | { action: "undock" };
+  | { action: "undock"; x: number };
 
 function rectRight(r: PhysicalRect): number {
   return r.x + r.width;
@@ -83,7 +90,13 @@ export function decideDock(
 
   if (state.view === "pill") {
     if (gap > UNDOCK_PX) {
-      return { action: "undock" };
+      const restoredWidth =
+        UNDOCKED_LOGICAL_WIDTH[state.lastUndockedView] * scaleFactor;
+      const x = Math.max(
+        workArea.x,
+        Math.min(windowRect.x, rectRight(workArea) - restoredWidth - UNDOCK_PX),
+      );
+      return { action: "undock", x };
     }
     return { action: "stay" };
   }
@@ -130,6 +143,13 @@ async function applyDockDecision(
     case "undock":
       setDockedDataset(false);
       await setView(lastUndockedView);
+      {
+        const win = getCurrentWindow();
+        const pos = await win.outerPosition();
+        await win.setPosition(
+          new PhysicalPosition(Math.round(result.x), pos.y),
+        );
+      }
       return;
     case "dock":
       setDockedDataset(true);
@@ -143,6 +163,10 @@ async function applyDockDecision(
       return _exhaustive;
     }
   }
+}
+
+function readDisposed(lifecycle: { disposed: boolean }): boolean {
+  return lifecycle.disposed;
 }
 
 export function useDock(): void {
@@ -162,7 +186,9 @@ export function useDock(): void {
 
     const window = getCurrentWindow();
     let debounceId: ReturnType<typeof setTimeout> | undefined;
-    let disposed = false;
+    const lifecycle = { disposed: false };
+    let evaluating = false;
+    let rerun = false;
 
     const scheduleEvaluate = () => {
       if (debounceId !== undefined) {
@@ -170,13 +196,32 @@ export function useDock(): void {
       }
       debounceId = setTimeout(() => {
         debounceId = undefined;
-        void evaluatePosition();
+        void runEvaluate();
       }, DEBOUNCE_MS);
     };
 
+    async function runEvaluate(): Promise<void> {
+      if (evaluating) {
+        rerun = true;
+        return;
+      }
+      evaluating = true;
+      try {
+        await evaluatePosition();
+      } catch (err: unknown) {
+        console.warn("dock evaluate:", err);
+      } finally {
+        evaluating = false;
+        if (rerun && !lifecycle.disposed) {
+          rerun = false;
+          scheduleEvaluate();
+        }
+      }
+    }
+
     async function evaluatePosition(): Promise<void> {
       const monitor = await currentMonitor();
-      if (disposed || monitor === null) {
+      if (lifecycle.disposed || monitor === null) {
         return;
       }
       const { workArea, scaleFactor } = workAreaFromMonitor(monitor);
@@ -184,6 +229,9 @@ export function useDock(): void {
         window.outerPosition(),
         window.outerSize(),
       ]);
+      if (readDisposed(lifecycle)) {
+        return;
+      }
       const windowRect: PhysicalRect = {
         x: position.x,
         y: position.y,
@@ -191,7 +239,12 @@ export function useDock(): void {
         height: size.height,
       };
       const { view, lastUndockedView } = settingsRef.current;
-      const result = decideDock(windowRect, workArea, { view }, scaleFactor);
+      const result = decideDock(
+        windowRect,
+        workArea,
+        { view, lastUndockedView },
+        scaleFactor,
+      );
       await applyDockDecision(result, lastUndockedView);
     }
 
@@ -201,7 +254,7 @@ export function useDock(): void {
         scheduleEvaluate();
       })
       .then((unlisten) => {
-        if (disposed) {
+        if (lifecycle.disposed) {
           unlisten();
           return;
         }
@@ -212,7 +265,7 @@ export function useDock(): void {
       });
 
     return () => {
-      disposed = true;
+      lifecycle.disposed = true;
       if (debounceId !== undefined) {
         clearTimeout(debounceId);
       }
