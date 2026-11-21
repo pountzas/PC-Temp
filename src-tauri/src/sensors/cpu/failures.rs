@@ -27,6 +27,7 @@ impl<T: Clone> FailureTracker<T> {
     }
 
     /// Clears latch and failure count (e.g. when the sensor source is recreated).
+    #[cfg_attr(not(test), allow(dead_code))]
     pub fn restart(&mut self) {
         self.consecutive_failures = 0;
         self.latched = false;
@@ -70,8 +71,6 @@ impl<T: Clone> FailureTracker<T> {
         }
     }
 }
-
-pub type OptionalReading<T> = FailureTracker<T>;
 
 #[cfg(test)]
 mod tests {

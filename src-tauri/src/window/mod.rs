@@ -5,16 +5,16 @@ use crate::ipc::events;
 use crate::ipc::types::{Settings, ViewMode, WindowPosition};
 use crate::settings;
 use layout::{
-    clamp_top_left, monitor_containing, settings_panel_origin, view_logical_size, view_patch,
-    Rect, SETTINGS_GAP_PX, SETTINGS_HEIGHT_PX, SETTINGS_WIDTH_PX,
+    clamp_top_left, monitor_containing, settings_panel_origin, view_logical_size, view_patch, Rect,
+    SETTINGS_GAP_PX, SETTINGS_HEIGHT_PX, SETTINGS_WIDTH_PX,
 };
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::{
-    AppHandle, Emitter, Listener, LogicalPosition, LogicalSize, Manager, PhysicalPosition,
-    Runtime, WebviewWindow, WindowEvent,
+    AppHandle, Emitter, Listener, LogicalPosition, LogicalSize, Manager, PhysicalPosition, Runtime,
+    WebviewWindow, WindowEvent,
 };
 
 pub const WIDGET_LABEL: &str = "widget";
@@ -77,9 +77,7 @@ fn persist_view<R: Runtime>(app: &AppHandle<R>, view: ViewMode) -> Result<(), St
     Ok(())
 }
 
-fn logical_outer_rect<R: Runtime>(
-    window: &WebviewWindow<R>,
-) -> Result<Rect, String> {
+fn logical_outer_rect<R: Runtime>(window: &WebviewWindow<R>) -> Result<Rect, String> {
     let scale = window
         .scale_factor()
         .map_err(|e| format!("scale factor: {e}"))?;
@@ -141,10 +139,7 @@ fn set_screen_physical_position<R: Runtime>(
         .map_err(|e| format!("set position: {e}"))
 }
 
-fn apply_view_size<R: Runtime>(
-    window: &WebviewWindow<R>,
-    view: ViewMode,
-) -> Result<(), String> {
+fn apply_view_size<R: Runtime>(window: &WebviewWindow<R>, view: ViewMode) -> Result<(), String> {
     let (w, h) = view_logical_size(view);
     window
         .set_size(LogicalSize::new(w, h))
@@ -199,20 +194,13 @@ fn restore_saved_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> 
         }
     };
     let (lw, lh) = view_logical_size(s.view);
-    let (x, y) = clamp_top_left(
-        (position.x, position.y),
-        (lw * scale, lh * scale),
-        work,
-    );
+    let (x, y) = clamp_top_left((position.x, position.y), (lw * scale, lh * scale), work);
     widget
         .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
         .map_err(|e| format!("set position: {e}"))
 }
 
-fn schedule_position_save<R: Runtime>(
-    app: AppHandle<R>,
-    state: Arc<Mutex<PositionSaveState>>,
-) {
+fn schedule_position_save<R: Runtime>(app: AppHandle<R>, state: Arc<Mutex<PositionSaveState>>) {
     let generation = {
         let mut guard = state.lock().expect("position save lock");
         guard.generation = guard.generation.saturating_add(1);
@@ -268,7 +256,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
     if let Ok(widget) = widget_window(app) {
         let app_moved = app.clone();
         let save_state_moved = save_state.clone();
-        let _ = widget.on_window_event(move |event| {
+        widget.on_window_event(move |event| {
             if let WindowEvent::Moved(PhysicalPosition { x, y }) = event {
                 let _ = (x, y);
                 if !DOCKED.load(Ordering::Relaxed) {
@@ -280,7 +268,7 @@ pub fn init<R: Runtime>(app: &AppHandle<R>) {
 
     if let Ok(settings_win) = settings_window(app) {
         let app_close = app.clone();
-        let _ = settings_win.on_window_event(move |event| {
+        settings_win.on_window_event(move |event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 if let Err(e) = close_settings(&app_close) {

@@ -6,10 +6,6 @@ pub fn capacity_for_interval(interval_ms: IntervalMs) -> usize {
         .map_or(1, |c| c.max(1) as usize)
 }
 
-pub fn empty() -> SensorHistory {
-    empty_for_interval(1000)
-}
-
 pub fn empty_for_interval(interval_ms: IntervalMs) -> SensorHistory {
     let cap = capacity_for_interval(interval_ms);
     SensorHistory {

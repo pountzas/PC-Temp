@@ -69,7 +69,11 @@ pub fn query_task_registered() -> bool {
 
 #[cfg(windows)]
 fn schtasks_failure(verb: &str, output: &std::process::Output) -> String {
-    let code = output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "?".into());
+    let code = output
+        .status
+        .code()
+        .map(|c| c.to_string())
+        .unwrap_or_else(|| "?".into());
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
     let detail = if !stderr.is_empty() {
@@ -149,10 +153,7 @@ mod tests {
 
     #[test]
     fn delete_args_match_spec() {
-        assert_eq!(
-            delete_args(),
-            vec!["/Delete", "/TN", "PC-Temp", "/F"]
-        );
+        assert_eq!(delete_args(), vec!["/Delete", "/TN", "PC-Temp", "/F"]);
     }
 
     #[test]

@@ -254,7 +254,10 @@ mod tests {
     fn gpu_snapshot_has_no_power_field() {
         let raw = fs::read_to_string(fixture_path("compact.json")).expect("read compact");
         let value: serde_json::Value = serde_json::from_str(&raw).expect("parse json");
-        let gpu = value.get("gpu").and_then(|g| g.as_object()).expect("gpu object");
+        let gpu = value
+            .get("gpu")
+            .and_then(|g| g.as_object())
+            .expect("gpu object");
         assert!(!gpu.contains_key("powerW"));
         assert!(!gpu.contains_key("packagePowerW"));
     }

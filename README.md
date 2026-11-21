@@ -17,9 +17,18 @@ Always-on-top Windows 11 hardware monitor widget (Tauri 2 + React + TypeScript +
 | `pnpm dev:mock` | Vite with `VITE_MOCK_SENSORS=1` |
 | `pnpm build` | Production frontend build |
 | `pnpm test` | Vitest unit tests |
-| `pnpm lint` | ESLint |
+| `pnpm lint` | ESLint (`src/`) |
+| `pnpm lint:fix` | ESLint with auto-fix |
+| `pnpm format` | Prettier write (`src/`) |
+| `pnpm format:check` | Prettier check |
 | `pnpm typecheck` | TypeScript |
+| `pnpm fmt:rust` | `cargo fmt` for `src-tauri/` |
+| `pnpm fmt:rust:check` | `cargo fmt --check` for `src-tauri/` |
+| `pnpm lint:rust` | Clippy on `src-tauri/` (`-D warnings`) |
+| `pnpm check` | Full local gate: lint, format, typecheck, test, Rust fmt/clippy |
 | `pnpm tauri` | Tauri CLI (`pnpm tauri build`, etc.) |
+
+Run `pnpm check` before pushing.
 
 ## Repository layout
 

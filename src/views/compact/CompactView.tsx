@@ -1,8 +1,8 @@
 import type { SensorTick } from "../../ipc/types";
 
-export interface CompactViewProps {
+export type CompactViewProps = {
   tick: SensorTick | null;
-}
+};
 
 export function CompactView({ tick }: CompactViewProps) {
   return (

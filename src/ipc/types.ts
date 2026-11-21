@@ -12,19 +12,19 @@ export type Units = "C" | "F";
 export type AlertComponent = "cpu" | "gpu";
 export type AlertLevel = "warm" | "hot";
 
-export interface CpuCoreReading {
+export type CpuCoreReading = {
   index: CoreIndex;
   tempC: Celsius | null;
   loadPct: Pct | null;
   clockMHz: MHz | null;
-}
+};
 
-export interface CpuThreadReading {
+export type CpuThreadReading = {
   index: number;
   loadPct: Pct | null;
-}
+};
 
-export interface CpuSnapshot {
+export type CpuSnapshot = {
   name: string;
   loadPct: Pct | null;
   packageTempC: Celsius | null;
@@ -33,9 +33,9 @@ export interface CpuSnapshot {
   baseClockMHz: 3500;
   cores: CpuCoreReading[];
   threads?: CpuThreadReading[];
-}
+};
 
-export interface GpuSnapshot {
+export type GpuSnapshot = {
   name: string;
   loadPct: Pct | null;
   coreTempC: Celsius | null;
@@ -43,29 +43,29 @@ export interface GpuSnapshot {
   fanPct: Pct | null;
   vramUsedMiB: number | null;
   vramTotalMiB: number | null;
-}
+};
 
-export interface SensorAlert {
+export type SensorAlert = {
   component: AlertComponent;
   level: AlertLevel;
   tempC: Celsius;
-}
+};
 
-export interface SensorHistory {
-  cpuLoad: Array<Pct | null>;
-  gpuLoad: Array<Pct | null>;
-}
+export type SensorHistory = {
+  cpuLoad: (Pct | null)[];
+  gpuLoad: (Pct | null)[];
+};
 
-export interface SensorTick {
+export type SensorTick = {
   ts: number;
   intervalMs: IntervalMs;
   cpu: CpuSnapshot;
   gpu: GpuSnapshot;
   history: SensorHistory;
   alerts: SensorAlert[];
-}
+};
 
-export interface Settings {
+export type Settings = {
   version: 1;
   opacityPct: number;
   clickThrough: boolean;
@@ -77,7 +77,7 @@ export interface Settings {
   view: ViewMode;
   lastUndockedView: UndockedView;
   position: { x: number; y: number } | null;
-}
+};
 
 export type SettingsPatch = Partial<Omit<Settings, "version">>;
 

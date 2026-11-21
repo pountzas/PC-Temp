@@ -13,32 +13,36 @@ export function useSettings(): Settings {
   const [settings, setSettings] = useState<Settings>(defaultSettings());
 
   useEffect(() => {
-    let active = true;
-    let receivedEvent = false;
+    const lifecycle = { active: true, receivedEvent: false };
 
     if (!isTauri() || mockSensorsEnabled()) {
       return () => {
-        active = false;
+        lifecycle.active = false;
       };
     }
 
     void (async () => {
       const current = await getSettings();
-      if (active && !receivedEvent) {
+      if (!lifecycle.active) {
+        return;
+      }
+      if (!lifecycle.receivedEvent) {
         setSettings(current);
       }
     })();
 
     const unlisten = listen<unknown>(SETTINGS_CHANGED, (event) => {
-      if (active) {
-        receivedEvent = true;
+      if (lifecycle.active) {
+        lifecycle.receivedEvent = true;
         setSettings(parseSettings(event.payload));
       }
     });
 
     return () => {
-      active = false;
-      void unlisten.then((fn) => fn());
+      lifecycle.active = false;
+      void unlisten.then((fn) => {
+        fn();
+      });
     };
   }, []);
 

@@ -172,10 +172,7 @@ mod tests {
             Some(80.0),
         ];
         let cores = cores_from_thread_loads(&threads);
-        assert_option_f64_slice_eq(
-            &cores,
-            &[Some(15.0), Some(35.0), Some(55.0), Some(75.0)],
-        );
+        assert_option_f64_slice_eq(&cores, &[Some(15.0), Some(35.0), Some(55.0), Some(75.0)]);
     }
 
     #[test]

@@ -128,27 +128,26 @@ async fn run_loop<E>(
     }
 }
 
-async fn read_with_timeout(
-    sources: &SensorSources,
-    timeout: Duration,
-) -> (CpuReading, GpuReading) {
+async fn read_with_timeout(sources: &SensorSources, timeout: Duration) -> (CpuReading, GpuReading) {
     let cpu = Arc::clone(&sources.cpu);
-    let cpu_fut = tokio::time::timeout(timeout, tokio::task::spawn_blocking(move || {
-        match cpu.try_lock() {
+    let cpu_fut = tokio::time::timeout(
+        timeout,
+        tokio::task::spawn_blocking(move || match cpu.try_lock() {
             Ok(mut s) => Some(s.read()),
             Err(TryLockError::Poisoned(p)) => Some(p.into_inner().read()),
             Err(TryLockError::WouldBlock) => None,
-        }
-    }));
+        }),
+    );
 
     let gpu = Arc::clone(&sources.gpu);
-    let gpu_fut = tokio::time::timeout(timeout, tokio::task::spawn_blocking(move || {
-        match gpu.try_lock() {
+    let gpu_fut = tokio::time::timeout(
+        timeout,
+        tokio::task::spawn_blocking(move || match gpu.try_lock() {
             Ok(mut s) => Some(s.read()),
             Err(TryLockError::Poisoned(p)) => Some(p.into_inner().read()),
             Err(TryLockError::WouldBlock) => None,
-        }
-    }));
+        }),
+    );
 
     let (cpu_res, gpu_res) = tokio::join!(cpu_fut, gpu_fut);
 
@@ -293,9 +292,7 @@ mod tests {
                 calls: Arc::clone(&calls),
                 release: std::sync::Mutex::new(release_rx),
             }))),
-            gpu: Arc::new(Mutex::new(Box::new(FastGpu {
-                load: Some(58.0),
-            }))),
+            gpu: Arc::new(Mutex::new(Box::new(FastGpu { load: Some(58.0) }))),
         };
         let timeout = Duration::from_millis(200);
         let (cpu, gpu) = read_with_timeout(&sources, timeout).await;

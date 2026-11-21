@@ -3,10 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const tokensPath = join(
-  dirname(fileURLToPath(import.meta.url)),
-  "tokens.css",
-);
+const tokensPath = join(dirname(fileURLToPath(import.meta.url)), "tokens.css");
 
 function parseCustomProperties(css: string): Map<string, string> {
   const map = new Map<string, string>();
@@ -16,6 +13,20 @@ function parseCustomProperties(css: string): Map<string, string> {
     map.set(match[1], match[2].trim());
   }
   return map;
+}
+
+/** Compare token values after Prettier/normalization (hex case, rgba spacing). */
+function normalizeCSSValue(value: string): string {
+  const compact = value.replace(/\s+/g, "");
+  if (compact.startsWith("#")) {
+    return compact.toLowerCase();
+  }
+  const rgbaMatch = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(compact);
+  if (rgbaMatch) {
+    const alpha = String(Number(rgbaMatch[4]));
+    return `rgba(${rgbaMatch[1]},${rgbaMatch[2]},${rgbaMatch[3]},${alpha})`;
+  }
+  return compact;
 }
 
 describe("tokens.css", () => {
@@ -81,6 +92,8 @@ describe("tokens.css", () => {
   ];
 
   it.each(specPairs)("defines %s as %s", (name, value) => {
-    expect(tokens.get(name)).toBe(value);
+    const actual = tokens.get(name);
+    expect(actual).toBeDefined();
+    expect(normalizeCSSValue(actual ?? "")).toBe(normalizeCSSValue(value));
   });
 });

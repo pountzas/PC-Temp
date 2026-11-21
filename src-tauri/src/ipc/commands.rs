@@ -1,5 +1,5 @@
 use crate::ipc::events;
-use crate::ipc::types::{Settings, SensorTick, ViewMode, WindowPosition};
+use crate::ipc::types::{SensorTick, Settings, ViewMode, WindowPosition};
 use crate::settings;
 use crate::state::{AppState, PollerMsg};
 use serde::Deserialize;
@@ -8,11 +8,7 @@ use tauri::{AppHandle, Emitter, State};
 
 #[tauri::command(rename_all = "snake_case")]
 pub fn get_snapshot(state: State<'_, Arc<AppState>>) -> Option<SensorTick> {
-    state
-        .last_tick
-        .read()
-        .ok()
-        .and_then(|guard| guard.clone())
+    state.last_tick.read().ok().and_then(|guard| guard.clone())
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -98,11 +94,8 @@ pub fn update_settings(
 #[tauri::command(rename_all = "snake_case")]
 pub fn set_view(app: AppHandle, view: ViewMode) -> Result<(), String> {
     crate::window::set_view(&app, view)?;
-    app.emit(
-        events::VIEW_CHANGED,
-        ViewChangedPayload { view },
-    )
-    .map_err(|e| format!("emit view-changed: {e}"))?;
+    app.emit(events::VIEW_CHANGED, ViewChangedPayload { view })
+        .map_err(|e| format!("emit view-changed: {e}"))?;
     Ok(())
 }
 

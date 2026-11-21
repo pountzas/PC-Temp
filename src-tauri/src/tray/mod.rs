@@ -75,7 +75,7 @@ fn commit_click_through_setting(app: &AppHandle, enabled: bool) -> Result<(), St
 
 fn apply_click_through_setting(app: &AppHandle, enabled: bool) -> Result<(), String> {
     let current = settings::get().click_through;
-    if enabled == !current {
+    if enabled != current {
         toggle_click_through(
             current,
             |next| window::apply_click_through(app, next),
@@ -104,14 +104,12 @@ fn handle_menu_event(app: &AppHandle, id: &str) {
     match id {
         ID_SHOW_HIDE => {
             let result = if widget_is_visible(app) {
-                window::hide_widget(app).and_then(|_| {
+                window::hide_widget(app).map(|_| {
                     sync_show_hide_label(app, &state);
-                    Ok(())
                 })
             } else {
-                show_and_focus_widget(app).and_then(|_| {
+                show_and_focus_widget(app).map(|_| {
                     sync_show_hide_label(app, &state);
-                    Ok(())
                 })
             };
             if let Err(e) = result {
@@ -198,7 +196,8 @@ pub fn init(app: &App) {
         }
     };
 
-    let settings_item = match MenuItem::with_id(app, ID_SETTINGS, "Settings…", true, None::<&str>) {
+    let settings_item = match MenuItem::with_id(app, ID_SETTINGS, "Settings…", true, None::<&str>)
+    {
         Ok(item) => item,
         Err(e) => {
             log::error!("tray settings item failed: {e}");
@@ -214,11 +213,11 @@ pub fn init(app: &App) {
         }
     };
 
-    debug_assert_eq!(MENU_ORDER, [ID_SHOW_HIDE, ID_CLICK_THROUGH, ID_SETTINGS, ID_QUIT]);
-    let menu = match Menu::with_items(
-        app,
-        &[&show_hide, &click_through, &settings_item, &quit],
-    ) {
+    debug_assert_eq!(
+        MENU_ORDER,
+        [ID_SHOW_HIDE, ID_CLICK_THROUGH, ID_SETTINGS, ID_QUIT]
+    );
+    let menu = match Menu::with_items(app, &[&show_hide, &click_through, &settings_item, &quit]) {
         Ok(menu) => menu,
         Err(e) => {
             log::error!("tray menu failed: {e}");

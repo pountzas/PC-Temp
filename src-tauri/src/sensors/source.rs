@@ -1,7 +1,7 @@
-use crate::ipc::types::{CpuSnapshot, GpuSnapshot, SensorTick};
+#[cfg(test)]
+use crate::ipc::types::SensorTick;
+use crate::ipc::types::{CpuSnapshot, GpuSnapshot};
 use serde::Deserialize;
-
-const COMPACT_FIXTURE: &str = include_str!("../../../src/ipc/fixtures/compact.json");
 
 #[derive(Debug, Clone)]
 pub struct CpuReading {
@@ -21,14 +21,20 @@ pub trait GpuSource: Send {
     fn read(&mut self) -> GpuReading;
 }
 
+#[cfg(test)]
+const COMPACT_FIXTURE: &str = include_str!("../../../src/ipc/fixtures/compact.json");
+
+#[cfg(test)]
 fn load_compact_tick() -> SensorTick {
     serde_json::from_str(COMPACT_FIXTURE).expect("parse compact SensorTick")
 }
 
+#[cfg(test)]
 pub struct MockCpu {
     tick: SensorTick,
 }
 
+#[cfg(test)]
 impl MockCpu {
     pub fn new() -> Self {
         Self {
@@ -37,12 +43,14 @@ impl MockCpu {
     }
 }
 
+#[cfg(test)]
 impl Default for MockCpu {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[cfg(test)]
 impl CpuSource for MockCpu {
     fn read(&mut self) -> CpuReading {
         CpuReading {

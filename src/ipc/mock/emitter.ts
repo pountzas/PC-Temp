@@ -5,13 +5,17 @@ export type SensorListener = (tick: SensorTick) => void;
 
 export const FIXTURE_NAMES = Object.keys(FIXTURES) as FixtureName[];
 
+function isFixtureName(raw: string): raw is FixtureName {
+  return Object.hasOwn(FIXTURES, raw);
+}
+
 function pinnedFixtureName(): FixtureName | null {
   const raw = import.meta.env.VITE_MOCK_FIXTURE?.trim();
   if (!raw || raw === "cycle") {
     return null;
   }
-  if (Object.hasOwn(FIXTURES, raw)) {
-    return raw as FixtureName;
+  if (isFixtureName(raw)) {
+    return raw;
   }
   console.warn(
     `[mock:sensors] unknown VITE_MOCK_FIXTURE "${raw}"; valid: ${FIXTURE_NAMES.join(", ")}, cycle`,
@@ -40,5 +44,7 @@ export function startMockSensorEmitter(
 
   emit();
   const handle = window.setInterval(emit, intervalMs);
-  return () => window.clearInterval(handle);
+  return () => {
+    window.clearInterval(handle);
+  };
 }

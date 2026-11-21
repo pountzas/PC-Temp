@@ -1,8 +1,8 @@
 import type { Settings } from "../../ipc/types";
 
-export interface SettingsViewProps {
+export type SettingsViewProps = {
   settings: Settings;
-}
+};
 
 export function SettingsView({ settings }: SettingsViewProps) {
   return (
