@@ -58,6 +58,30 @@ pub fn clamp_top_left(pos: (f64, f64), size: (f64, f64), work: Rect) -> (f64, f6
     (x, y)
 }
 
+/// Physical or logical space — `point` must use the same units as `work_areas`.
+pub fn monitor_containing(point: (f64, f64), work_areas: &[Rect]) -> Option<usize> {
+    let (px, py) = point;
+    work_areas.iter().position(|work| {
+        px >= work.x
+            && px < work.right()
+            && py >= work.y
+            && py < work.bottom()
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewPersistFields {
+    pub view: ViewMode,
+    pub last_undocked_view: Option<UndockedView>,
+}
+
+pub fn view_patch(view: ViewMode) -> ViewPersistFields {
+    ViewPersistFields {
+        view,
+        last_undocked_view: undocked_view_for(view),
+    }
+}
+
 pub fn settings_panel_origin(
     widget: Rect,
     settings_width: f64,
@@ -142,15 +166,52 @@ mod tests {
     }
 
     #[test]
+    fn monitor_containing_finds_second_monitor() {
+        let areas = [
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            Rect {
+                x: 1920.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+        ];
+        assert_eq!(monitor_containing((100.0, 100.0), &areas), Some(0));
+        assert_eq!(monitor_containing((2000.0, 100.0), &areas), Some(1));
+        assert_eq!(monitor_containing((4000.0, 100.0), &areas), None);
+    }
+
+    #[test]
+    fn view_patch_sets_undocked_only_for_compact_and_expanded() {
+        assert_eq!(
+            view_patch(ViewMode::Pill).last_undocked_view,
+            None,
+        );
+        assert_eq!(
+            view_patch(ViewMode::Compact).last_undocked_view,
+            Some(UndockedView::Compact),
+        );
+        assert_eq!(
+            view_patch(ViewMode::Expanded).last_undocked_view,
+            Some(UndockedView::Expanded),
+        );
+    }
+
+    #[test]
     fn settings_flips_left_near_right_edge() {
         let work = Rect {
             x: 0.0,
             y: 0.0,
-            width: 500.0,
+            width: 1000.0,
             height: 600.0,
         };
         let widget = Rect {
-            x: 100.0,
+            x: 600.0,
             y: 50.0,
             width: 320.0,
             height: 200.0,
@@ -162,6 +223,30 @@ mod tests {
             SETTINGS_GAP_PX,
             work,
         );
-        assert!(x < widget.x);
+        assert_eq!(x, widget.x - SETTINGS_GAP_PX - SETTINGS_WIDTH_PX);
+    }
+
+    #[test]
+    fn settings_clamps_when_neither_side_fits() {
+        let work = Rect {
+            x: 100.0,
+            y: 0.0,
+            width: 400.0,
+            height: 600.0,
+        };
+        let widget = Rect {
+            x: 200.0,
+            y: 50.0,
+            width: 320.0,
+            height: 200.0,
+        };
+        let (x, _) = settings_panel_origin(
+            widget,
+            SETTINGS_WIDTH_PX,
+            SETTINGS_HEIGHT_PX,
+            SETTINGS_GAP_PX,
+            work,
+        );
+        assert_eq!(x, work.x);
     }
 }

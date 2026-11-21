@@ -1,11 +1,16 @@
 import type { MouseEvent } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { isTauri } from "../ipc/tauri";
 import { startDrag } from "./drag";
 
-const startDragging = vi.fn();
+const startDragging = vi.fn(() => Promise.resolve());
 
 vi.mock("@tauri-apps/api/window", () => ({
   getCurrentWindow: () => ({ startDragging }),
+}));
+
+vi.mock("../ipc/tauri", () => ({
+  isTauri: vi.fn(() => true),
 }));
 
 function targetInsideButton(isButton: boolean): Element {
@@ -42,6 +47,13 @@ describe("startDrag", () => {
   it("does not drag when mousedown starts on a button", () => {
     startDragging.mockClear();
     startDrag(mouseEvent(0, true));
+    expect(startDragging).not.toHaveBeenCalled();
+  });
+
+  it("does not call startDragging when not in Tauri", () => {
+    startDragging.mockClear();
+    vi.mocked(isTauri).mockReturnValueOnce(false);
+    startDrag(mouseEvent(0, false));
     expect(startDragging).not.toHaveBeenCalled();
   });
 });

@@ -1,8 +1,12 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { MouseEvent } from "react";
+import { isTauri } from "../ipc/tauri";
 
 /** Begin native window drag on primary-button mousedown outside buttons. */
 export function startDrag(e: MouseEvent): void {
+  if (!isTauri()) {
+    return;
+  }
   if (e.button !== 0) {
     return;
   }
@@ -16,5 +20,7 @@ export function startDrag(e: MouseEvent): void {
   ) {
     return;
   }
-  void getCurrentWindow().startDragging();
+  getCurrentWindow().startDragging().catch((err) => {
+    console.warn("startDragging failed:", err);
+  });
 }

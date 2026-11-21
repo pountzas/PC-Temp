@@ -5,8 +5,8 @@ use crate::ipc::events;
 use crate::ipc::types::{Settings, ViewMode, WindowPosition};
 use crate::settings;
 use layout::{
-    clamp_top_left, settings_panel_origin, view_logical_size, Rect, SETTINGS_GAP_PX,
-    SETTINGS_HEIGHT_PX, SETTINGS_WIDTH_PX,
+    clamp_top_left, monitor_containing, settings_panel_origin, view_logical_size, view_patch,
+    Rect, SETTINGS_GAP_PX, SETTINGS_HEIGHT_PX, SETTINGS_WIDTH_PX,
 };
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -64,14 +64,17 @@ fn persist_position(position: WindowPosition) -> Result<(), String> {
 }
 
 fn persist_view<R: Runtime>(app: &AppHandle<R>, view: ViewMode) -> Result<(), String> {
+    let fields = view_patch(view);
     let mut patch = empty_settings_patch();
-    patch.view = Some(view);
-    if let Some(undocked) = layout::undocked_view_for(view) {
+    patch.view = Some(fields.view);
+    if let Some(undocked) = fields.last_undocked_view {
         patch.last_undocked_view = Some(undocked);
     }
     let updated = settings::update(patch)?;
-    app.emit(events::SETTINGS_CHANGED, &updated)
-        .map_err(|e| format!("emit settings-changed: {e}"))
+    if let Err(e) = app.emit(events::SETTINGS_CHANGED, &updated) {
+        log::warn!("emit settings-changed: {e}");
+    }
+    Ok(())
 }
 
 fn logical_outer_rect<R: Runtime>(
@@ -165,16 +168,59 @@ fn apply_view_with_anchor<R: Runtime>(app: &AppHandle<R>, view: ViewMode) -> Res
     persist_view(app, view)
 }
 
+fn physical_monitor_work_areas<R: Runtime>(app: &AppHandle<R>) -> Result<Vec<Rect>, String> {
+    app.available_monitors()
+        .map_err(|e| format!("monitors: {e}"))?
+        .into_iter()
+        .map(|m| {
+            let work = m.work_area();
+            Ok(Rect {
+                x: work.position.x as f64,
+                y: work.position.y as f64,
+                width: work.size.width as f64,
+                height: work.size.height as f64,
+            })
+        })
+        .collect()
+}
+
+fn primary_physical_work_area<R: Runtime>(app: &AppHandle<R>) -> Result<Rect, String> {
+    let monitor = app
+        .primary_monitor()
+        .map_err(|e| format!("primary monitor: {e}"))?
+        .ok_or_else(|| "no primary monitor".to_string())?;
+    let work = monitor.work_area();
+    Ok(Rect {
+        x: work.position.x as f64,
+        y: work.position.y as f64,
+        width: work.size.width as f64,
+        height: work.size.height as f64,
+    })
+}
+
 fn restore_saved_position<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
     let Some(position) = settings::get().position else {
         return Ok(());
     };
     let widget = widget_window(app)?;
-    let (w, h) = view_logical_size(settings::get().view);
-    let work = work_area_rect(&widget)?;
-    let (x, y) = clamp_top_left((position.x, position.y), (w, h), work);
-    set_logical_outer_position(&widget, x, y)?;
-    Ok(())
+    let scale = widget
+        .scale_factor()
+        .map_err(|e| format!("scale factor: {e}"))?;
+    let (lw, lh) = view_logical_size(settings::get().view);
+    let (pw, ph) = (lw * scale, lh * scale);
+    let areas = physical_monitor_work_areas(app)?;
+    let work = match monitor_containing((position.x, position.y), &areas) {
+        Some(idx) => areas.get(idx).copied(),
+        None => None,
+    };
+    let work = match work {
+        Some(w) => w,
+        None => primary_physical_work_area(app)?,
+    };
+    let (x, y) = clamp_top_left((position.x, position.y), (pw, ph), work);
+    widget
+        .set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32))
+        .map_err(|e| format!("set position: {e}"))
 }
 
 fn schedule_position_save<R: Runtime>(
@@ -200,25 +246,30 @@ fn schedule_position_save<R: Runtime>(
         let Ok(widget) = widget_window(&app_clone) else {
             return;
         };
-        let Ok(rect) = logical_outer_rect(&widget) else {
+        let Ok(pos) = widget.outer_position() else {
             return;
         };
-        let _ = persist_position(WindowPosition { x: rect.x, y: rect.y });
+        let _ = persist_position(WindowPosition {
+            x: pos.x as f64,
+            y: pos.y as f64,
+        });
     });
 }
 
 fn apply_settings_to_widget<R: Runtime>(app: &AppHandle<R>, s: &Settings) -> Result<(), String> {
-    apply_always_on_top(app, s.always_on_top)?;
-    apply_click_through(app, s.click_through)?;
-    Ok(())
+    let top = apply_always_on_top(app, s.always_on_top);
+    let click = apply_click_through(app, s.click_through);
+    top.and(click)
 }
 
 pub fn init<R: Runtime>(app: &AppHandle<R>) {
     let settings_snapshot = settings::get();
-    if let Err(e) =
-        apply_view_size(&widget_window(app).expect("widget window"), settings_snapshot.view)
-    {
-        log::warn!("initial view size: {e}");
+    if let Ok(widget) = widget_window(app) {
+        if let Err(e) = apply_view_size(&widget, settings_snapshot.view) {
+            log::warn!("initial view size: {e}");
+        }
+    } else {
+        log::warn!("widget window missing during init");
     }
     if let Err(e) = restore_saved_position(app) {
         log::warn!("restore position: {e}");
@@ -302,7 +353,7 @@ pub fn open_settings<R: Runtime>(app: &AppHandle<R>) -> Result<(), String> {
         SETTINGS_GAP_PX,
         work,
     );
-    set_logical_origin_on_window(&settings_win, x, y, widget_scale)?;
+    set_screen_physical_position(&settings_win, x, y, widget_scale)?;
     settings_win
         .show()
         .map_err(|e| format!("show settings: {e}"))?;
