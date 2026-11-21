@@ -281,3 +281,69 @@ mod tests {
         assert_eq!(updated.interval_ms, 2000);
     }
 }
+
+#[cfg(any(test, debug_assertions))]
+pub mod test_support {
+    use super::*;
+    use crate::ipc::types::Settings;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    static STORE_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    pub use persist::{hydrate_settings, settings_to_json, STORE_KEY, STORE_PATH};
+
+    /// Seed in-memory settings for poller `seed_interval_ms` (no Tauri store).
+    pub fn seed_memory(settings: Settings) {
+        let _ = memory();
+        let mut guard = memory().write().expect("settings memory lock");
+        *guard = settings;
+    }
+
+    pub fn read_memory() -> Settings {
+        memory()
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| Settings::default_v1())
+    }
+
+    /// Plugin-store file layout: top-level map keyed by [`STORE_KEY`].
+    pub fn write_store_file(dir: &Path, settings_doc: serde_json::Value) -> PathBuf {
+        let path = dir.join(STORE_PATH);
+        let envelope = serde_json::json!({ STORE_KEY: settings_doc });
+        fs::write(
+            &path,
+            serde_json::to_string_pretty(&envelope).expect("serialise store envelope"),
+        )
+        .expect("write temp settings store");
+        path
+    }
+
+    pub fn hydrate_from_temp_store(dir: &Path) -> Settings {
+        let path = dir.join(STORE_PATH);
+        let raw = fs::read_to_string(&path).expect("read temp settings store");
+        let envelope: serde_json::Value =
+            serde_json::from_str(&raw).expect("parse temp settings store");
+        let doc = envelope
+            .get(STORE_KEY)
+            .cloned()
+            .expect("store key in envelope");
+        hydrate_settings(doc)
+    }
+
+    pub fn temp_dir_with_interval(interval_ms: u32) -> (PathBuf, Settings) {
+        let _guard = STORE_TEST_LOCK.lock().expect("store test lock");
+        let dir = std::env::temp_dir().join(format!(
+            "pc-temp-settings-test-{}-{}",
+            std::process::id(),
+            interval_ms
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("temp settings dir");
+        write_store_file(&dir, serde_json::json!({ "intervalMs": interval_ms }));
+        let hydrated = hydrate_from_temp_store(&dir);
+        assert_eq!(hydrated.interval_ms, interval_ms);
+        (dir, hydrated)
+    }
+}

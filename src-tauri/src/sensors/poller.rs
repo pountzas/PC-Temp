@@ -13,7 +13,7 @@ use tokio::time::MissedTickBehavior;
 
 const VALID_INTERVALS: [IntervalMs; 3] = [1000, 2000, 5000];
 
-struct SensorSources {
+pub(crate) struct SensorSources {
     cpu: Arc<Mutex<Box<dyn CpuSource>>>,
     gpu: Arc<Mutex<Box<dyn GpuSource>>>,
 }
@@ -431,5 +431,134 @@ mod tests {
 
         handle.abort();
         let _ = handle.await;
+    }
+}
+
+#[cfg(any(test, debug_assertions))]
+pub(crate) mod test_support {
+    use super::*;
+    use crate::ipc::types::Pct;
+    use crate::sensors::source::{MockCpu, MockGpu};
+    use std::sync::{Arc, Mutex};
+    use tokio::sync::mpsc;
+    use tokio::time::{self as tokio_time, Duration as TokioDuration};
+
+    pub fn test_state() -> Arc<AppState> {
+        let (tx, _rx) = mpsc::channel(8);
+        Arc::new(AppState {
+            poller: crate::state::PollerHandle { tx },
+            last_tick: std::sync::RwLock::new(None),
+        })
+    }
+
+    pub(crate) fn test_sources() -> super::SensorSources {
+        SensorSources {
+            cpu: Arc::new(Mutex::new(Box::new(MockCpu::new()) as Box<dyn CpuSource>)),
+            gpu: Arc::new(Mutex::new(Box::new(MockGpu::new()) as Box<dyn GpuSource>)),
+        }
+    }
+
+    pub(crate) fn test_sources_with_gpu<G: GpuSource + 'static>(gpu: G) -> super::SensorSources {
+        SensorSources {
+            cpu: Arc::new(Mutex::new(Box::new(MockCpu::new()) as Box<dyn CpuSource>)),
+            gpu: Arc::new(Mutex::new(Box::new(gpu) as Box<dyn GpuSource>)),
+        }
+    }
+
+    pub async fn run_default_poller_loop<E>(
+        state: Arc<AppState>,
+        rx: mpsc::Receiver<PollerMsg>,
+        on_emit: E,
+    ) where
+        E: FnMut(&SensorTick),
+    {
+        run_loop(state, test_sources(), rx, on_emit).await;
+    }
+
+    pub async fn run_poller_with_gpu<G, E>(
+        state: Arc<AppState>,
+        gpu: G,
+        rx: mpsc::Receiver<PollerMsg>,
+        on_emit: E,
+    ) where
+        G: GpuSource + 'static,
+        E: FnMut(&SensorTick),
+    {
+        run_loop(state, test_sources_with_gpu(gpu), rx, on_emit).await;
+    }
+
+    pub async fn advance_interval_ticks(n: u32) {
+        for _ in 0..n {
+            tokio_time::advance(TokioDuration::from_millis(1000)).await;
+            for _ in 0..8 {
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+
+    pub async fn wait_until(mut predicate: impl FnMut() -> bool) {
+        for _ in 0..80 {
+            if predicate() {
+                return;
+            }
+            tokio_time::advance(TokioDuration::from_millis(50)).await;
+            for _ in 0..4 {
+                tokio::task::yield_now().await;
+            }
+        }
+        panic!("condition not met before poll budget exhausted");
+    }
+
+    pub async fn wait_for_tick<F>(state: &Arc<AppState>, predicate: F)
+    where
+        F: Fn(&SensorTick) -> bool,
+    {
+        wait_until(|| {
+            state
+                .last_tick
+                .read()
+                .ok()
+                .and_then(|g| g.clone())
+                .map(|t| predicate(&t))
+                .unwrap_or(false)
+        })
+        .await;
+    }
+
+    /// GPU mock whose core temperature changes per read (poller integration scenarios).
+    pub struct SteppedGpu {
+        temps_c: Vec<Option<Pct>>,
+        index: usize,
+    }
+
+    impl SteppedGpu {
+        pub fn new(temps_c: Vec<Option<f64>>) -> Self {
+            Self {
+                temps_c: temps_c.into_iter().map(|t| t.map(|v| v as Pct)).collect(),
+                index: 0,
+            }
+        }
+    }
+
+    impl GpuSource for SteppedGpu {
+        fn read(&mut self) -> GpuReading {
+            let temp = self
+                .temps_c
+                .get(self.index)
+                .copied()
+                .flatten()
+                .or_else(|| self.temps_c.last().copied().flatten());
+            if self.index + 1 < self.temps_c.len() {
+                self.index += 1;
+            }
+            let mut snap = failed_gpu_reading().snapshot;
+            snap.core_temp_c = temp;
+            snap.load_pct = Some(50.0);
+            GpuReading { snapshot: snap }
+        }
+    }
+
+    pub fn last_tick(state: &Arc<AppState>) -> Option<SensorTick> {
+        state.last_tick.read().ok().and_then(|g| g.clone())
     }
 }

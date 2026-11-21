@@ -7,6 +7,9 @@ mod state;
 mod tray;
 mod window;
 
+#[cfg(any(test, debug_assertions))]
+pub mod integration_test;
+
 use ipc::commands::{
     close_settings, get_autostart, get_settings, get_snapshot, open_settings, quit_app,
     set_click_through, set_view, update_settings,
