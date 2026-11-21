@@ -1,1 +1,66 @@
-/* Design tokens stub — HW-04 */
+/* Design tokens — spec §3 (docs/spec/2026-11-19-hardware-monitor-widget-build-spec.md) */
+
+:root {
+  /* colour, from the Paper file */
+  --color-bg: #05070C;
+  --color-glass: rgba(12,17,26,0.64);
+  --color-glass-raised: rgba(255,255,255,0.05);
+  --color-line: rgba(255,255,255,0.09);
+  --color-edge: rgba(120,225,255,0.35);
+  --color-text: #EAF2F8;
+  --color-muted: #93A3B5;
+  --color-faint: #56637A;
+  --color-cpu: #22E5FF;
+  --color-gpu: #B65CFF;
+  --color-warm: #FFB020;
+  --color-hot: #FF3B4E;
+  --color-mica-inactive: #1D1F25;
+  --color-window-border-inactive: rgba(255,255,255,0.16);
+
+  /* type */
+  --font-mono: "JetBrains Mono";
+  --font-display: "Rajdhani";
+  --font-sans: "Inter";
+  --text-xs: 10px;
+  --text-sm: 12px;
+  --text-md: 14px;
+  --text-lg: 20px;
+  --text-xl: 30px;
+  --font-weight-regular: 400;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --tracking-tight: -0.02em;
+  --tracking-caps: 0.14em;
+  --opacity-muted: 40%;
+
+  /* radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 14px;
+  --radius-pill: 999px;
+
+  /* spacing */
+  --spacing-1: 4px;
+  --spacing-2: 8px;
+  --spacing-3: 12px;
+  --spacing-4: 16px;
+  --spacing-5: 20px;
+  --spacing-6: 24px;
+
+  /* containers */
+  --container-pill: 220px;
+  --container-compact: 320px;
+  --container-expanded: 420px;
+  --breakpoint-desktop: 1280px;
+
+  /* PROPOSED: not in Paper, they cover hard-coded values */
+  --color-live: #3DFFA8;
+  --color-hot-text: #FF6B7A;
+  --color-track: rgba(255,255,255,0.08);
+  --color-divider: rgba(255,255,255,0.06);
+  --color-accent-bg: rgba(34,229,255,0.12);
+  --color-window-border: rgba(255,255,255,0.10);
+  --radius-window: 8px;
+  --radius-control: 4px;
+  --color-accent: var(--color-cpu);
+}
