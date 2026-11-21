@@ -1,1 +1,9 @@
-/* Unfocused window stub — HW-15 */
+/* Unfocused Mica fallback — HW-14 / spec §2.6 */
+
+html {
+  background: transparent;
+}
+
+html.is-unfocused {
+  background: var(--color-mica-inactive);
+}
