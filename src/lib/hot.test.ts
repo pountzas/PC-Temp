@@ -18,4 +18,20 @@ describe("isGpuHot", () => {
   it("is false for gpu warm only", () => {
     expect(isGpuHot(FIXTURES.warn)).toBe(false);
   });
+
+  it("trusts alerts over gpu temperature", () => {
+    const highTempNoAlert = {
+      ...FIXTURES.compact,
+      gpu: { ...FIXTURES.compact.gpu, coreTempC: 91 },
+      alerts: [],
+    };
+    expect(isGpuHot(highTempNoAlert)).toBe(false);
+
+    const lowTempWithHotAlert = {
+      ...FIXTURES.compact,
+      gpu: { ...FIXTURES.compact.gpu, coreTempC: 64 },
+      alerts: [{ component: "gpu" as const, level: "hot" as const, tempC: 64 }],
+    };
+    expect(isGpuHot(lowTempWithHotAlert)).toBe(true);
+  });
 });

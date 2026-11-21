@@ -130,4 +130,22 @@ describe("CompactView", () => {
     const left = screen.getByTestId("compact-footer-left").textContent;
     expect(left).not.toMatch(/\d+\s*W\b/i);
   });
+
+  it("leaves hot state when gpu hot alert clears", () => {
+    const { container, rerender } = renderCompact(FIXTURES.hot);
+    expect(container.querySelector(".compact-panel.is-hot")).toBeTruthy();
+    expect(screen.getByTestId("gpu-hot-chip")).toBeTruthy();
+
+    const cooled: SensorTick = {
+      ...FIXTURES.hot,
+      gpu: { ...FIXTURES.hot.gpu, coreTempC: 86 },
+      alerts: [],
+    };
+    rerender(<CompactView tick={cooled} settings={defaultSettings()} />);
+    expect(container.querySelector(".compact-panel.is-hot")).toBeNull();
+    expect(screen.queryByTestId("gpu-hot-chip")).toBeNull();
+    expect(screen.getByTestId("compact-footer-left").textContent).toBe(
+      "UPDATE 1s · 3.90 / 1.02 GHz",
+    );
+  });
 });

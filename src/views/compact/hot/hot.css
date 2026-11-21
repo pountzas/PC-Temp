@@ -4,10 +4,6 @@
   border-radius: var(--radius-window);
 }
 
-.compact-panel.is-hot {
-  box-shadow: inset 0 0 0 1px rgba(255, 59, 78, 0.55);
-}
-
 .compact-panel.is-hot::before {
   content: "";
   position: absolute;
@@ -21,8 +17,20 @@
   z-index: 2;
 }
 
-html.is-unfocused .compact-panel.is-hot {
-  border: 1px solid var(--color-window-border-inactive);
+.compact-panel.is-hot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+  box-shadow: inset 0 0 0 1px rgba(255, 59, 78, 0.55);
+}
+
+html.is-unfocused .compact-panel.is-hot::after {
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 59, 78, 0.55),
+    inset 0 0 0 1px var(--color-window-border-inactive);
 }
 
 .gpu-hot-chip {
