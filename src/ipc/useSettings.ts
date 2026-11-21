@@ -14,6 +14,7 @@ export function useSettings(): Settings {
 
   useEffect(() => {
     let active = true;
+    let receivedEvent = false;
 
     if (!isTauri() || mockSensorsEnabled()) {
       return () => {
@@ -23,13 +24,14 @@ export function useSettings(): Settings {
 
     void (async () => {
       const current = await getSettings();
-      if (active) {
+      if (active && !receivedEvent) {
         setSettings(current);
       }
     })();
 
     const unlisten = listen<unknown>(SETTINGS_CHANGED, (event) => {
       if (active) {
+        receivedEvent = true;
         setSettings(parseSettings(event.payload));
       }
     });
