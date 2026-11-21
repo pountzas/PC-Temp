@@ -68,6 +68,21 @@ pub fn query_task_registered() -> bool {
 }
 
 #[cfg(windows)]
+fn schtasks_failure(verb: &str, output: &std::process::Output) -> String {
+    let code = output.status.code().map(|c| c.to_string()).unwrap_or_else(|| "?".into());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let detail = if !stderr.is_empty() {
+        stderr.into_owned()
+    } else if !stdout.is_empty() {
+        stdout.into_owned()
+    } else {
+        "(no output)".into()
+    };
+    format!("schtasks {verb} failed (exit {code}): {detail}")
+}
+
+#[cfg(windows)]
 pub fn create_logon_task(exe: PathBuf) -> Result<(), String> {
     let run_as = interactive_run_as()?;
     let args = create_args(&exe, &run_as);
@@ -75,8 +90,7 @@ pub fn create_logon_task(exe: PathBuf) -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(format!("schtasks create failed: {stderr}"))
+    Err(schtasks_failure("create", &output))
 }
 
 #[cfg(windows)]
@@ -86,8 +100,7 @@ pub fn delete_logon_task() -> Result<(), String> {
     if output.status.success() {
         return Ok(());
     }
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    Err(format!("schtasks delete failed: {stderr}"))
+    Err(schtasks_failure("delete", &output))
 }
 
 #[cfg(test)]
