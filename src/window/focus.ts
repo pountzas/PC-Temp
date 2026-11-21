@@ -29,21 +29,35 @@ export function useFocusClass(): void {
 
     const win = getCurrentWindow();
     let disposed = false;
+    let sawFocusEvent = false;
     const unlistenPromise = win.onFocusChanged(({ payload: focused }) => {
+      sawFocusEvent = true;
       setUnfocused(!focused);
     });
-
-    void win.isFocused().then((focused) => {
-      if (!disposed) {
-        setUnfocused(!focused);
-      }
+    unlistenPromise.catch((err: unknown) => {
+      console.warn("useFocusClass: onFocusChanged failed", err);
     });
+
+    win
+      .isFocused()
+      .then((focused) => {
+        if (!disposed && !sawFocusEvent) {
+          setUnfocused(!focused);
+        }
+      })
+      .catch((err: unknown) => {
+        console.warn("useFocusClass: isFocused failed", err);
+      });
 
     return () => {
       disposed = true;
-      void unlistenPromise.then((unlisten) => {
-        unlisten();
-      });
+      unlistenPromise
+        .then((unlisten) => {
+          unlisten();
+        })
+        .catch(() => {
+          // already logged above
+        });
       setUnfocused(false);
     };
   }, []);

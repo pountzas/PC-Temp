@@ -167,4 +167,49 @@ describe("useFocusClass", () => {
       true,
     );
   });
+
+  it("does not let a late isFocused() reply override a newer focus event", async () => {
+    let resolveFocused: (v: boolean) => void = () => {};
+    isFocused.mockReturnValue(
+      new Promise<boolean>((r) => {
+        resolveFocused = r;
+      }),
+    );
+    renderHook(() => {
+      useFocusClass();
+    });
+    await waitFor(() => {
+      expect(focusHandler).toBeDefined();
+    });
+
+    await act(async () => {
+      defined(focusHandler, "focusHandler")({ payload: false });
+    });
+    await act(async () => {
+      resolveFocused(true);
+    });
+
+    expect(document.documentElement.classList.contains("is-unfocused")).toBe(
+      true,
+    );
+  });
+
+  it("logs and keeps state when isFocused or onFocusChanged rejects", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    isFocused.mockRejectedValue(new Error("ipc down"));
+    onFocusChanged.mockRejectedValue(new Error("listen denied"));
+
+    const { unmount } = renderHook(() => {
+      useFocusClass();
+    });
+
+    await waitFor(() => {
+      expect(warn).toHaveBeenCalledTimes(2);
+    });
+    expect(document.documentElement.classList.contains("is-unfocused")).toBe(
+      false,
+    );
+    unmount();
+    warn.mockRestore();
+  });
 });
