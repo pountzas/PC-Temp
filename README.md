@@ -37,3 +37,9 @@ Run `pnpm check` before pushing.
 - `docs/spec/`, `docs/design/` — build spec and design exports (see READMEs there if assets are still missing)
 
 Integration branch: **`dev`**. Sub-PRs target `dev`, not `main`.
+
+## Designs
+
+- [PC-Temp widget](https://app.paper.design/file/01M7RQV969C1C8VB6JQ71K2MAV) — compact, expanded, mini pill, hot state, settings, and unfocused layouts.
+- Static PNG exports for offline review live under [`docs/design/`](docs/design/).
+- The Paper file is private; you need access through Nikos's Paper account to open the link.
