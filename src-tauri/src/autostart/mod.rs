@@ -1,3 +1,4 @@
+mod install_dir;
 mod schtasks;
 
 #[cfg(windows)]
@@ -9,6 +10,7 @@ pub fn is_enabled() -> bool {
 pub fn set_enabled(enabled: bool) -> Result<(), String> {
     if enabled {
         let exe = std::env::current_exe().map_err(|e| format!("current_exe: {e}"))?;
+        install_dir::ensure_autostart_install_dir(&exe)?;
         schtasks::create_logon_task(exe)
     } else {
         schtasks::delete_logon_task()

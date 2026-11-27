@@ -18,6 +18,21 @@
     ExecWait `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\install-pawnio.ps1" -Quiet $R0` $0
     DetailPrint "PawnIO step finished (exit $0)."
   pawnio_run_done:
+
+  ; Install dir must be under 64-bit Program Files (perMachine) — issue #57
+  StrLen $R1 "$PROGRAMFILES64"
+  StrCpy $R2 $INSTDIR $R1
+  ${If} $R2 != "$PROGRAMFILES64"
+    DetailPrint "WARNING: install path is not under Program Files ($INSTDIR); autostart may be refused."
+  ${EndIf}
+  DetailPrint "Hardening install folder permissions (admin-only write)..."
+  ExecWait `"$SYSDIR\icacls.exe" "$INSTDIR" /inheritance:r /T /C` $0
+  DetailPrint "icacls inherit exit $0"
+  ExecWait `"$SYSDIR\icacls.exe" "$INSTDIR" /grant:r "BUILTIN\Administrators:(OI)(CI)F"` $0
+  ExecWait `"$SYSDIR\icacls.exe" "$INSTDIR" /grant:r "NT AUTHORITY\SYSTEM:(OI)(CI)F"` $0
+  ExecWait `"$SYSDIR\icacls.exe" "$INSTDIR" /grant:r "NT SERVICE\TrustedInstaller:(OI)(CI)F"` $0
+  ExecWait `"$SYSDIR\icacls.exe" "$INSTDIR" /grant:r "BUILTIN\Users:(OI)(CI)RX"` $0
+  DetailPrint "Install folder ACL hardened."
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

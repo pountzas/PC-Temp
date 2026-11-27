@@ -98,6 +98,17 @@ describe("Windows installer packaging (#21)", () => {
     expect(hooks).not.toMatch(/ExecWait[^`]*`schtasks\.exe /);
   });
 
+  it("POSTINSTALL hardens install dir ACL under Program Files (#57)", () => {
+    const hooks = read("src-tauri/windows/hooks.nsh");
+    expect(hooks).toMatch(/\$PROGRAMFILES64/);
+    expect(hooks).toMatch(/\$SYSDIR\\icacls\.exe/);
+    expect(hooks).toMatch(/BUILTIN\\Administrators:\(OI\)\(CI\)F/i);
+    expect(hooks).toMatch(/NT AUTHORITY\\SYSTEM:\(OI\)\(CI\)F/i);
+    expect(hooks).toMatch(/TrustedInstaller:\(OI\)\(CI\)F/i);
+    expect(hooks).toMatch(/BUILTIN\\Users:\(OI\)\(CI\)RX/i);
+    expect(hooks).toMatch(/\/inheritance:r/i);
+  });
+
   it("release workflow is manual dispatch with SHA-pinned actions and bundle asserts", () => {
     const yml = read(".github/workflows/release.yml");
     expect(yml).toMatch(/workflow_dispatch/);
