@@ -202,25 +202,54 @@ fn poll_gpu_snapshot<R: NvmlDeviceReadings>(
     }
 }
 
-/// Absolute path passed to `Nvml::builder().lib_path(...)` when loading NVML.
 fn nvml_lib_path_for_load() -> PathBuf {
-    std::env::var_os("SystemRoot")
-        .map(|root| PathBuf::from(root).join("System32").join("nvml.dll"))
-        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\nvml.dll"))
+    nvml_lib_path_from(system32_dir())
+}
+
+/// Only trust an absolute System32 directory; otherwise use the fixed default.
+fn nvml_lib_path_from(system_dir: Option<PathBuf>) -> PathBuf {
+    match system_dir {
+        Some(dir) if dir.is_absolute() => dir.join("nvml.dll"),
+        _ => PathBuf::from(r"C:\Windows\System32\nvml.dll"),
+    }
 }
 
 #[cfg(windows)]
-fn restrict_nvml_dll_search_directories() {
-    unsafe {
-        let _ = SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+fn system32_dir() -> Option<PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+
+    let mut buf = [0u16; 260];
+    // SAFETY: `buf` is valid for `buf.len()` u16 writes.
+    let len = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    if len == 0 || len >= buf.len() {
+        return None;
+    }
+    Some(PathBuf::from(OsString::from_wide(&buf[..len])))
+}
+
+#[cfg(not(windows))]
+fn system32_dir() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(windows)]
+pub(crate) fn restrict_dll_search_directories() {
+    // SAFETY: plain Win32 call with a constant flag.
+    let ok = unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) };
+    if ok == 0 {
+        log::warn!(
+            "SetDefaultDllDirectories(SYSTEM32) failed: {}",
+            std::io::Error::last_os_error()
+        );
     }
 }
 
 #[cfg(not(windows))]
-fn restrict_nvml_dll_search_directories() {}
+pub(crate) fn restrict_dll_search_directories() {}
 
 fn init_nvml() -> Result<Nvml, NvmlError> {
-    restrict_nvml_dll_search_directories();
     let path = nvml_lib_path_for_load();
     Nvml::builder().lib_path(path.as_os_str()).init()
 }
@@ -304,6 +333,42 @@ mod tests {
         assert!(
             text.to_ascii_lowercase().ends_with("system32\\nvml.dll"),
             "expected absolute System32\\nvml.dll path, got {path:?}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_rejects_empty_system_dir() {
+        assert_eq!(
+            nvml_lib_path_from(Some(PathBuf::new())),
+            PathBuf::from(r"C:\Windows\System32\nvml.dll")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_rejects_relative_system_dir() {
+        assert_eq!(
+            nvml_lib_path_from(Some(PathBuf::from("System32"))),
+            PathBuf::from(r"C:\Windows\System32\nvml.dll")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_uses_absolute_system_dir() {
+        assert_eq!(
+            nvml_lib_path_from(Some(PathBuf::from(r"D:\Win\System32"))),
+            PathBuf::from(r"D:\Win\System32\nvml.dll")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_falls_back_when_unavailable() {
+        assert_eq!(
+            nvml_lib_path_from(None),
+            PathBuf::from(r"C:\Windows\System32\nvml.dll")
         );
     }
 
