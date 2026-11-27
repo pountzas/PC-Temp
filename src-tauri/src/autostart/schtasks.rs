@@ -45,12 +45,17 @@ pub fn interactive_run_as() -> Result<String, String> {
     Ok(format!("{domain}\\{user}"))
 }
 
+pub fn schtasks_exe_from(system_root: Option<PathBuf>) -> PathBuf {
+    match system_root {
+        Some(root) if root.is_absolute() => root.join("System32").join("schtasks.exe"),
+        _ => PathBuf::from(r"C:\Windows\System32\schtasks.exe"),
+    }
+}
+
 /// Absolute path to `schtasks.exe` under `%SystemRoot%\System32`.
 #[cfg(windows)]
 pub fn schtasks_exe() -> PathBuf {
-    std::env::var_os("SystemRoot")
-        .map(|root| PathBuf::from(root).join("System32").join("schtasks.exe"))
-        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\schtasks.exe"))
+    schtasks_exe_from(std::env::var_os("SystemRoot").map(PathBuf::from))
 }
 
 #[cfg(windows)]
@@ -167,6 +172,24 @@ mod tests {
     #[test]
     fn query_args_match_spec() {
         assert_eq!(query_args(), vec!["/Query", "/TN", "PC-Temp"]);
+    }
+
+    #[test]
+    fn schtasks_exe_falls_back_when_root_missing_or_relative() {
+        let fallback = PathBuf::from(r"C:\Windows\System32\schtasks.exe");
+        assert_eq!(schtasks_exe_from(None), fallback);
+        assert_eq!(schtasks_exe_from(Some(PathBuf::new())), fallback);
+        assert_eq!(
+            schtasks_exe_from(Some(PathBuf::from("Windows"))),
+            fallback
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn schtasks_exe_uses_absolute_system_root() {
+        let exe = schtasks_exe_from(Some(PathBuf::from(r"D:\Win")));
+        assert_eq!(exe, PathBuf::from(r"D:\Win\System32\schtasks.exe"));
     }
 
     #[test]
