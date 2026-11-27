@@ -34,37 +34,32 @@ pub enum LhmClientError {
     Starting,
 }
 
-/// Release builds with no bundled sidecar fail resolution (never a bare filename for PATH lookup).
-#[cfg(any(test, not(debug_assertions)))]
-pub(crate) fn resolve_binary_for_release_missing_bundle(
-    host_exe_dir: &Path,
+/// Pure resolution: bundled next to the host exe; dev binary only when `allow_dev_fallback`.
+/// Never returns a bare filename, so release builds never fall through to a PATH lookup.
+pub(crate) fn resolve_binary_in(
+    host_exe_dir: Option<&Path>,
+    allow_dev_fallback: bool,
 ) -> Result<PathBuf, LhmClientError> {
-    let expected = host_exe_dir.join(BUNDLED_BINARY);
-    Err(LhmClientError::BinaryNotFound(expected))
+    if let Some(dir) = host_exe_dir {
+        let bundled = dir.join(BUNDLED_BINARY);
+        if bundled.is_file() {
+            return Ok(bundled);
+        }
+        if !allow_dev_fallback {
+            return Err(LhmClientError::BinaryNotFound(bundled));
+        }
+    }
+    if allow_dev_fallback {
+        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEV_BINARY))
+    } else {
+        Err(LhmClientError::BinaryNotFound(PathBuf::from(BUNDLED_BINARY)))
+    }
 }
 
 /// Resolves the sidecar executable: bundled next to the host exe, else dev binary in debug builds only.
 pub fn resolve_binary_path() -> Result<PathBuf, LhmClientError> {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            let bundled = dir.join(BUNDLED_BINARY);
-            if bundled.is_file() {
-                return Ok(bundled);
-            }
-            #[cfg(not(debug_assertions))]
-            {
-                return resolve_binary_for_release_missing_bundle(dir);
-            }
-        }
-    }
-    #[cfg(debug_assertions)]
-    {
-        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEV_BINARY))
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        resolve_binary_for_release_missing_bundle(Path::new("."))
-    }
+    let exe = std::env::current_exe().ok();
+    resolve_binary_in(exe.as_deref().and_then(Path::parent), cfg!(debug_assertions))
 }
 
 #[cfg(test)]
@@ -482,33 +477,53 @@ mod tests {
         assert_eq!(cpu.name, "Intel Core i7-3770K");
     }
 
-    #[test]
-    fn release_missing_bundled_sidecar_returns_binary_not_found_with_full_path() {
-        let dir =
-            std::env::temp_dir().join(format!("pc_temp_lhm_resolve_test_{}", std::process::id()));
+    fn temp_dir(tag: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("pc_temp_lhm_{tag}_{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("mkdir");
-        let outcome = resolve_binary_for_release_missing_bundle(&dir);
-        match outcome {
-            Err(LhmClientError::BinaryNotFound(path)) => {
-                assert_eq!(path, dir.join(BUNDLED_BINARY));
-                assert_ne!(path, PathBuf::from(BUNDLED_BINARY));
-            }
+        dir
+    }
+
+    #[test]
+    fn release_missing_bundle_is_binary_not_found_never_bare_name() {
+        let dir = temp_dir("missing");
+        match resolve_binary_in(Some(&dir), false) {
+            Err(LhmClientError::BinaryNotFound(p)) => assert_eq!(p, dir.join(BUNDLED_BINARY)),
             other => panic!("expected BinaryNotFound, got {other:?}"),
         }
         let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn dev_fallback_binary_path_when_bundled_missing() {
-        let path = resolve_binary_path().expect("debug resolve");
-        #[cfg(debug_assertions)]
-        {
-            let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-            if !manifest.join(BUNDLED_BINARY).is_file() {
-                assert_eq!(path, manifest.join(DEV_BINARY));
-            }
+    fn release_without_exe_dir_is_binary_not_found() {
+        assert!(matches!(
+            resolve_binary_in(None, false),
+            Err(LhmClientError::BinaryNotFound(_))
+        ));
+    }
+
+    #[test]
+    fn bundled_sidecar_wins_in_both_modes() {
+        let dir = temp_dir("bundled");
+        fs::write(dir.join(BUNDLED_BINARY), b"").expect("touch");
+        for dev in [false, true] {
+            assert_eq!(
+                resolve_binary_in(Some(&dir), dev).expect("ok"),
+                dir.join(BUNDLED_BINARY)
+            );
         }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn debug_missing_bundle_falls_back_to_dev_binary() {
+        let dir = temp_dir("dev");
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        assert_eq!(
+            resolve_binary_in(Some(&dir), true).expect("ok"),
+            manifest.join(DEV_BINARY)
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
