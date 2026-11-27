@@ -1,0 +1,5 @@
+/* Settings window — lock focused backdrop to app token (issue #75 / spec §2.5) */
+
+html:not(.is-unfocused) {
+  background: var(--color-mica-inactive);
+}
