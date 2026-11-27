@@ -19,6 +19,8 @@ const PAWNIO_URL =
 const isWindows = process.platform === "win32";
 
 const windowsPowerShell = "powershell.exe";
+const pwshExe =
+  process.env.PWSH ?? "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
 
 /** Use PS 5.1 module path only; inheriting PS7's PSModulePath breaks Get-FileHash in 5.1. */
 const ps51Modules = join(
@@ -29,6 +31,24 @@ const ps51Modules = join(
   "Modules",
 );
 const psEnv = { ...process.env, PSModulePath: ps51Modules };
+
+const importPs51SecurityModule = [
+  "$secMod = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1'",
+  "try { Import-Module -Force -Name $secMod -ErrorAction Stop } catch { throw (($_ | Format-List * -Force | Out-String)) }",
+].join("; ");
+
+const isPowerShellHostVar = (key: string) =>
+  key === "PSModulePath" ||
+  key === "PSExecutionPolicyPreference" ||
+  key === "__PSLockdownPolicy" ||
+  key.startsWith("POWERSHELL_");
+
+const stripPowerShellHostEnv = (
+  base: NodeJS.ProcessEnv,
+): NodeJS.ProcessEnv =>
+  Object.fromEntries(
+    Object.entries(base).filter(([key]) => !isPowerShellHostVar(key)),
+  );
 
 describe("PawnIO 2.2.0 pin (#56)", () => {
   it("declares pinned SHA-256 and signer thumbprint constants", () => {
@@ -99,15 +119,30 @@ describe.skipIf(!isWindows)(
       }
     });
 
-    const runPowerShell = (command: string) =>
+    const runPowerShell51 = (command: string) =>
       execSync(
-        `${windowsPowerShell} -NoProfile -Command "${command.replace(/"/g, '\\"')}"`,
+        `${windowsPowerShell} -NoProfile -Command "${`${importPs51SecurityModule}; ${command}`.replace(/"/g, '\\"')}"`,
         {
           encoding: "utf8",
           timeout: 60_000,
           env: psEnv,
         },
       );
+
+    const runPowerShell = (command: string) => {
+      try {
+        return runPowerShell51(command);
+      } catch {
+        return execSync(
+          `"${pwshExe}" -NoProfile -Command "${command.replace(/"/g, '\\"')}"`,
+          {
+            encoding: "utf8",
+            timeout: 60_000,
+            env: stripPowerShellHostEnv(process.env),
+          },
+        );
+      }
+    };
 
     it("accepts the official 2.2.0 setup executable", () => {
       const out = runPowerShell(
