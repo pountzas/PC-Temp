@@ -1,8 +1,12 @@
 # Security baseline: secret scan + dependency audit.
-# Private repo: no PR trigger (OQ-26 / spending limits); weekly + manual only.
+# Public repo: PRs into dev/main plus weekly schedule and manual dispatch.
 name: security
 
 on:
+  pull_request:
+    branches:
+      - dev
+      - main
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
