@@ -92,6 +92,10 @@ describe("Windows installer packaging (#21)", () => {
     expect(hooks).toMatch(/NSIS_HOOK_POSTUNINSTALL/);
     expect(hooks).toMatch(/schtasks.*PC-Temp/i);
     expect(hooks).toMatch(/schtasks delete exit/);
+    expect(hooks).toContain("$SYSDIR\\WindowsPowerShell\\v1.0\\powershell.exe");
+    expect(hooks).toContain("$SYSDIR\\schtasks.exe");
+    expect(hooks).not.toMatch(/ExecWait[^`]*`powershell\.exe /);
+    expect(hooks).not.toMatch(/ExecWait[^`]*`schtasks\.exe /);
   });
 
   it("release workflow is manual dispatch with SHA-pinned actions and bundle asserts", () => {

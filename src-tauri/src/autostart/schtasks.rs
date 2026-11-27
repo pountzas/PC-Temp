@@ -45,6 +45,19 @@ pub fn interactive_run_as() -> Result<String, String> {
     Ok(format!("{domain}\\{user}"))
 }
 
+pub fn schtasks_exe_from(system_root: Option<PathBuf>) -> PathBuf {
+    match system_root {
+        Some(root) if root.is_absolute() => root.join("System32").join("schtasks.exe"),
+        _ => PathBuf::from(r"C:\Windows\System32\schtasks.exe"),
+    }
+}
+
+/// Absolute path to `schtasks.exe` under `%SystemRoot%\System32`.
+#[cfg(windows)]
+pub fn schtasks_exe() -> PathBuf {
+    schtasks_exe_from(std::env::var_os("SystemRoot").map(PathBuf::from))
+}
+
 #[cfg(windows)]
 pub fn run_schtasks(args: &[String]) -> Result<std::process::Output, String> {
     use std::os::windows::process::CommandExt;
@@ -52,7 +65,7 @@ pub fn run_schtasks(args: &[String]) -> Result<std::process::Output, String> {
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    Command::new("schtasks")
+    Command::new(schtasks_exe())
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
@@ -159,5 +172,39 @@ mod tests {
     #[test]
     fn query_args_match_spec() {
         assert_eq!(query_args(), vec!["/Query", "/TN", "PC-Temp"]);
+    }
+
+    #[test]
+    fn schtasks_exe_falls_back_when_root_missing_or_relative() {
+        let fallback = PathBuf::from(r"C:\Windows\System32\schtasks.exe");
+        assert_eq!(schtasks_exe_from(None), fallback);
+        assert_eq!(schtasks_exe_from(Some(PathBuf::new())), fallback);
+        assert_eq!(
+            schtasks_exe_from(Some(PathBuf::from("Windows"))),
+            fallback
+        );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn schtasks_exe_uses_absolute_system_root() {
+        let exe = schtasks_exe_from(Some(PathBuf::from(r"D:\Win")));
+        assert_eq!(exe, PathBuf::from(r"D:\Win\System32\schtasks.exe"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn schtasks_exe_is_absolute_system32_path() {
+        let exe = super::schtasks_exe();
+        assert!(exe.is_absolute(), "schtasks path must be absolute: {exe:?}");
+        let path = exe.to_string_lossy();
+        assert!(
+            path.ends_with(r"\System32\schtasks.exe"),
+            "expected System32 schtasks.exe, got {path}"
+        );
+        assert!(
+            exe.components().count() >= 3,
+            "must not launch schtasks by bare name: {path}"
+        );
     }
 }
