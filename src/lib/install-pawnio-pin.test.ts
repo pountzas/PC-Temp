@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { execSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -19,6 +20,10 @@ const isWindows = process.platform === "win32";
 
 const windowsPowerShell = "powershell.exe";
 
+/** Windows PowerShell 5.1 must not inherit PS7's PSModulePath (breaks Get-FileHash). */
+const psEnv = { ...process.env };
+delete psEnv.PSModulePath;
+
 describe("PawnIO 2.2.0 pin (#56)", () => {
   it("declares pinned SHA-256 and signer thumbprint constants", () => {
     const ps1 = read("scripts/install-pawnio.ps1");
@@ -28,6 +33,7 @@ describe("PawnIO 2.2.0 pin (#56)", () => {
     expect(ps1).toContain(OFFICIAL_PAWNIO_220_SIGNER_THUMBPRINT);
     expect(ps1).toMatch(/Get-FileHash[\s\S]*SHA256/);
     expect(ps1).toMatch(/SignerCertificate\.Thumbprint/);
+    expect(ps1).toMatch(/function Invoke-PawnIOInstall/);
   });
 });
 
@@ -39,31 +45,49 @@ describe.skipIf(!isWindows)(
     let officialSetupPath: string;
     let cacheDir: string;
 
-    beforeAll(() => {
+    beforeAll(async () => {
       cacheDir = mkdtempSync(join(tmpdir(), "pc-temp-pawnio-pin-"));
       officialSetupPath = join(cacheDir, "PawnIO_setup.exe");
-      if (!existsSync(officialSetupPath)) {
-        execSync(
-          [
-            "$ProgressPreference = 'SilentlyContinue'",
-            `Invoke-WebRequest -Uri '${PAWNIO_URL}' -OutFile '${officialSetupPath.replace(/'/g, "''")}' -UseBasicParsing -TimeoutSec 120`,
-          ].join("; "),
-          { shell: "powershell.exe", stdio: "pipe", timeout: 180_000 },
-        );
+      const destEsc = officialSetupPath.replace(/'/g, "''");
+      for (let i = 0; i < 3; i++) {
+        try {
+          execSync(
+            [
+              "$ProgressPreference = 'SilentlyContinue'",
+              `Invoke-WebRequest -Uri '${PAWNIO_URL}' -OutFile '${destEsc}' -UseBasicParsing -TimeoutSec 120`,
+            ].join("; "),
+            {
+              shell: "powershell.exe",
+              stdio: "pipe",
+              timeout: 180_000,
+              env: psEnv,
+            },
+          );
+          break;
+        } catch (e) {
+          if (i === 2) {
+            throw e;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+        }
       }
-      const hash = execSync(
-        `Get-FileHash -LiteralPath '${officialSetupPath.replace(/'/g, "''")}' -Algorithm SHA256 | Select-Object -ExpandProperty Hash`,
-        { shell: "powershell.exe", encoding: "utf8" },
-      ).trim();
+      const hash = createHash("sha256")
+        .update(readFileSync(officialSetupPath))
+        .digest("hex")
+        .toUpperCase();
       expect(hash).toBe(OFFICIAL_PAWNIO_220_SHA256);
     }, 180_000);
 
     afterAll(() => {
       try {
-        execSync(`Remove-Item -LiteralPath '${cacheDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue`, {
-          shell: "powershell.exe",
-          stdio: "ignore",
-        });
+        execSync(
+          `Remove-Item -LiteralPath '${cacheDir.replace(/'/g, "''")}' -Recurse -Force -ErrorAction SilentlyContinue`,
+          {
+            shell: "powershell.exe",
+            stdio: "ignore",
+            env: psEnv,
+          },
+        );
       } catch {
         /* ignore */
       }
@@ -75,60 +99,53 @@ describe.skipIf(!isWindows)(
         {
           encoding: "utf8",
           timeout: 60_000,
+          env: psEnv,
         },
       );
 
     it("accepts the official 2.2.0 setup executable", () => {
-      const setup = officialSetupPath.replace(/\\/g, "\\\\");
       const out = runPowerShell(
-        `. '${scriptPath.replace(/'/g, "''")}'; Test-PawnIOSetupAuthenticode -Path '${setup.replace(/'/g, "''")}'`,
+        `. '${scriptPath.replace(/'/g, "''")}'; Test-PawnIOSetupAuthenticode -Path '${officialSetupPath.replace(/'/g, "''")}'`,
       ).trim();
       expect(out.endsWith("True")).toBe(true);
     });
 
     it("rejects a valid signature when the SHA-256 pin does not match", () => {
-      const setup = officialSetupPath.replace(/\\/g, "\\\\");
       const out = runPowerShell(
         [
           `. '${scriptPath.replace(/'/g, "''")}'`,
           `$script:PAWNIO_SETUP_SHA256 = '0000000000000000000000000000000000000000000000000000000000000000'`,
-          `Test-PawnIOSetupAuthenticode -Path '${setup.replace(/'/g, "''")}'`,
+          `Test-PawnIOSetupAuthenticode -Path '${officialSetupPath.replace(/'/g, "''")}'`,
         ].join("; "),
       ).trim();
       expect(out.endsWith("False")).toBe(true);
     });
 
     it("surfaces the manual-install notice on pin mismatch and exits 0", () => {
-      const setup = officialSetupPath.replace(/\\/g, "\\\\");
-      const harness = join(cacheDir, "pin-mismatch-harness.ps1");
-      writeFileSync(
-        harness,
-        `
-$ErrorActionPreference = 'Stop'
-. '${scriptPath.replace(/'/g, "''")}' -NoPrompt
-$script:PAWNIO_SETUP_SHA256 = '0000000000000000000000000000000000000000000000000000000000000000'
-$exitCode = 0
-try {
-  if (-not (Test-PawnIOSetupAuthenticode -Path '${setup.replace(/'/g, "''")}')) {
-    throw 'PawnIO setup failed release pin verification.'
-  }
-} catch {
-  Write-InstallDetail "PawnIO install step failed: $($_.Exception.Message)"
-  Show-PawnIOManualInstallNotice
-  $exitCode = 0
-}
-exit $exitCode
-`,
-        "utf8",
+      const scriptEsc = scriptPath.replace(/'/g, "''");
+      const setupEsc = officialSetupPath.replace(/'/g, "''");
+      const cacheEsc = cacheDir.replace(/'/g, "''");
+
+      const output = runPowerShell(
+        [
+          "$ErrorActionPreference = 'Stop'",
+          `. '${scriptEsc}' -NoPrompt`,
+          `$script:PAWNIO_SETUP_SHA256 = '0000000000000000000000000000000000000000000000000000000000000000'`,
+          "$script:setupRan = $false",
+          "$script:cleanedDir = $null",
+          "function Test-PawnIOInstalled { $false }",
+          `function Get-PawnIOSetupDownloadDir { '${cacheEsc}' }`,
+          `function Get-PawnIOSetupExe { param($DownloadDir) '${setupEsc}' }`,
+          "function Invoke-PawnIOSetup { param($SetupPath) $script:setupRan = $true; 0 }",
+          "function Remove-PawnIOSetupDownloadDir { param($Dir) $script:cleanedDir = $Dir }",
+          "$code = Invoke-PawnIOInstall",
+          'Write-Host "EXIT=$code SETUP_RAN=$($script:setupRan) CLEANED=$($script:cleanedDir)"',
+        ].join("; "),
       );
 
-      const output = execSync(
-        `${windowsPowerShell} -NoProfile -File "${harness}"`,
-        {
-          encoding: "utf8",
-          timeout: 30_000,
-        },
-      );
+      expect(output).toMatch(/EXIT=0/);
+      expect(output).toMatch(/SETUP_RAN=False/i);
+      expect(output).toMatch(new RegExp(`CLEANED=${cacheEsc.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
       expect(output).toMatch(/could not install the PawnIO driver automatically/i);
       expect(output).toMatch(/namazso\/PawnIO\.Setup\/releases\/latest/);
     });

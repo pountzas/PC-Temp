@@ -40,13 +40,19 @@ function Test-PawnIOSetupAuthenticode {
 
     $sig = Get-AuthenticodeSignature -FilePath $Path
     if ($sig.Status -ne 'Valid') {
+        Write-InstallDetail "PawnIO setup Authenticode status is $($sig.Status) (expected Valid)."
         return $false
     }
     if ($sig.SignerCertificate.Thumbprint -ne $script:PAWNIO_SIGNER_THUMBPRINT) {
+        Write-InstallDetail 'PawnIO setup signer thumbprint does not match the pinned release.'
         return $false
     }
     $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
-    return $hash -eq $script:PAWNIO_SETUP_SHA256
+    if ($hash -ne $script:PAWNIO_SETUP_SHA256) {
+        Write-InstallDetail 'PawnIO setup SHA-256 does not match the pinned 2.2.0 release.'
+        return $false
+    }
+    return $true
 }
 
 function Get-PawnIOSetupDownloadDir {
@@ -133,10 +139,10 @@ $($script:PAWNIO_MANUAL_URL)
     }
 }
 
-if ($MyInvocation.InvocationName -ne '.') {
+function Invoke-PawnIOInstall {
     if (Test-PawnIOInstalled) {
         Write-InstallDetail 'PawnIO is already installed; skipping.'
-        exit 0
+        return 0
     }
 
     $pawnioSetupDownloadDir = $null
@@ -151,11 +157,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         switch ($exitCode) {
             0 {
                 Write-InstallDetail 'PawnIO installed successfully.'
-                exit 0
+                return 0
             }
             $script:PAWNIO_REBOOT_EXIT_CODE {
                 Write-InstallDetail 'PawnIO installed; a reboot is required before CPU temperatures are available.'
-                exit 0
+                return 0
             }
             default {
                 throw "PawnIO setup exited with code $exitCode."
@@ -164,10 +170,14 @@ if ($MyInvocation.InvocationName -ne '.') {
     } catch {
         Write-InstallDetail "PawnIO install step failed: $($_.Exception.Message)"
         Show-PawnIOManualInstallNotice
-        exit 0
+        return 0
     } finally {
         if ($pawnioSetupDownloadDir) {
             Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
         }
     }
+}
+
+if ($MyInvocation.InvocationName -ne '.') {
+    exit (Invoke-PawnIOInstall)
 }
