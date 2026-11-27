@@ -1,6 +1,6 @@
 # Windows Authenticode signing plan
 
-PC-Temp ships an elevated NSIS installer. Today, release builds are reproducibly tied to GitHub Actions via build provenance and a published SHA-256, but binaries are **unsigned**. Users see SmartScreen warnings until we add Authenticode signing.
+PC-Temp ships an elevated NSIS installer. Today, release builds are cryptographically tied to GitHub Actions via build provenance and a published SHA-256, but binaries are **unsigned**. Users see SmartScreen warnings until we add Authenticode signing.
 
 This document records two viable paths. **Nikos chooses one** before purchasing or configuring certificates. Implementation (workflow changes, secret storage) is out of scope for issue #59.
 
@@ -23,7 +23,7 @@ This document records two viable paths. **Nikos chooses one** before purchasing 
 
 **Cons**
 
-- Requires an Azure subscription and Trusted Signing enrollment (pricing and eligibility rules change; confirm before committing).
+- Requires an Azure subscription and Trusted Signing enrollment, including identity validation (individual vs. registered organisation; supported countries are restricted). Confirm a Greece-based individual maintainer is eligible before choosing this option; pricing and rules change.
 - Setup is heavier than a one-off EV token for a single maintainer.
 
 **Rough rollout**
@@ -35,6 +35,8 @@ This document records two viable paths. **Nikos chooses one** before purchasing 
 
 ## Option B: SignPath OSS (free tier for open source)
 
+SignPath OSS enrollment requires an OSI-approved license in the repository (none today).
+
 **What it is:** [SignPath](https://signpath.io/) provides free code signing for qualifying open-source projects; maintainers submit build artifacts, policy checks run, then SignPath signs with their foundation certificate.
 
 **Pros**
@@ -45,6 +47,7 @@ This document records two viable paths. **Nikos chooses one** before purchasing 
 
 **Cons**
 
+- **Prerequisite:** the repo must carry an OSI-approved license (none today); adding one is a separate decision for Nikos.
 - Extra dependency on SignPath availability and policy turnaround (not fully inline in every CI run unless using their API/integration tier).
 - Branding shows SignPath Foundation as signer unless you later add your own cert.
 
@@ -64,7 +67,7 @@ This document records two viable paths. **Nikos chooses one** before purchasing 
 | Key custody | Azure HSM | SignPath |
 | SmartScreen reputation | Builds over time with cert | Foundation cert; may need volume |
 
-**Recommendation:** Prefer **SignPath OSS** if enrollment is accepted quickly and policy latency is acceptable for manual releases. Prefer **Azure Trusted Signing** if we want full control of the publisher name and tight CI-only signing without a third-party submission queue.
+**Recommendation:** If PC-Temp adopts an OSI license, prefer **SignPath OSS** when enrollment is accepted quickly and policy latency is acceptable for manual releases. Prefer **Azure Trusted Signing** if we want full control of the publisher name and tight CI-only signing without a third-party submission queue (or if we stay unlicensed and SignPath OSS is not an option).
 
 ## Non-goals (issue #59)
 

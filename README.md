@@ -38,12 +38,11 @@ Run `pnpm check` before pushing.
 
 Integration branch: **`dev`**. Sub-PRs target `dev`, not `main`.
 
-<<<<<<< HEAD
 ## Verify release provenance
 
 Official Windows installers are built manually via the [**release** workflow](.github/workflows/release.yml) (`workflow_dispatch`). Each run uploads the NSIS `.exe` plus a sidecar `*.exe.sha256` (lowercase hex, no filename line).
 
-1. Download the `pc-temp-windows-installer` artifact from the workflow run (or from a GitHub Release that attaches it).
+1. Download the `pc-temp-windows-installer` artifact from the release workflow run (GitHub sign-in required) and extract the zip; it contains the installer `.exe` and its `.exe.sha256`.
 2. **Checksum:** compare the installer hash locally with the `.sha256` file. On Windows PowerShell:
 
    ```powershell
@@ -62,10 +61,9 @@ Official Windows installers are built manually via the [**release** workflow](.g
    ```
 
    Successful verification confirms a Sigstore-backed attestation for that file’s digest tied to the workflow run. Installers are **not** Authenticode-signed yet; see [docs/signing-plan.md](docs/signing-plan.md) for the planned approach.
-=======
+
 ## Designs
 
 - [PC-Temp widget](https://app.paper.design/file/01M7RQV969C1C8VB6JQ71K2MAV) — compact, expanded, mini pill, hot state, settings, and unfocused layouts.
 - Static PNG exports for offline review live under [`docs/design/`](docs/design/).
 - The Paper file is private; you need access through Nikos's Paper account to open the link.
->>>>>>> origin/dev
