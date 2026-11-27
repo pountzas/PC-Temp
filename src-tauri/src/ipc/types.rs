@@ -151,7 +151,7 @@ impl Settings {
             always_on_top: true,
             units: Units::Celsius,
             interval_ms: 1000,
-            start_with_windows: true,
+            start_with_windows: false,
             accent: "#22E5FF".to_string(),
             view: ViewMode::Compact,
             last_undocked_view: UndockedView::Compact,

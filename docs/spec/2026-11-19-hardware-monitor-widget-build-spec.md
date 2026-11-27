@@ -23,7 +23,7 @@
 - **Sensor sidecar:** a LibreHardwareMonitor **.NET 4.8.1** sidecar. The **installer downloads PawnIO**.
 - **Pin** toggles **always on top** (drawn on).
 - **Close** hides the widget **to the tray**; it does not quit. Quit lives in the tray menu.
-- **Start with Windows** defaults **on**.
+- **Start with Windows** defaults **off** (opt-in, #58).
 
 Labels used below:
 - **[sample]**: a mock number in the design, not a spec.
@@ -212,7 +212,7 @@ Rows as drawn **[sample state]**. The Backdrop row was **removed**, because Mica
 | Always on top | toggle | on | — |
 | Units | segmented: °C \| °F | °C | — |
 | Update interval | segmented: 1s \| 2s \| 5s | 1s | — |
-| Start with Windows | toggle | on | "Runs at sign-in via Task Scheduler (admin)" |
+| Start with Windows | toggle | off (opt-in, #58) | "Runs at sign-in via Task Scheduler (admin)" |
 | Theme accent | 4 swatches | cyan | — |
 
 ---
@@ -409,7 +409,7 @@ All APIs below are checked against the Tauri 2 docs:
 - **Resizing between views:**
   - Uses `setSize`/`setPosition` with permissions `core:window:allow-set-size` and `core:window:allow-set-position`.
   - Sizes: Compact 320×200, Expanded 420×540, Pill 220×44.
-- **Start with Windows: Task Scheduler logon task** *(decided 2026-11-19; default **on**, 2026-11-20)*.
+- **Start with Windows: Task Scheduler logon task** *(decided 2026-11-19; default **off** opt-in, #58)*.
   - Windows blocks apps that require elevation from launching via the user's Run key or Startup folder. They fail silently. Sources:
     - https://stackoverflow.com/questions/2293609
     - https://stackoverflow.com/questions/16185165
