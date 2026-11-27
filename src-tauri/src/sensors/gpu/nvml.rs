@@ -3,6 +3,12 @@ use crate::sensors::source::{GpuReading, GpuSource};
 use nvml_wrapper::enum_wrappers::device::{Clock, TemperatureSensor};
 use nvml_wrapper::error::NvmlError;
 use nvml_wrapper::Nvml;
+use std::path::PathBuf;
+
+#[cfg(windows)]
+use windows_sys::Win32::System::LibraryLoader::{
+    SetDefaultDllDirectories, LOAD_LIBRARY_SEARCH_SYSTEM32,
+};
 
 pub const BYTES_PER_MIB: u64 = 1_048_576;
 const MAX_TRANSIENT_FAILURES: u8 = 3;
@@ -196,6 +202,29 @@ fn poll_gpu_snapshot<R: NvmlDeviceReadings>(
     }
 }
 
+/// Absolute path passed to `Nvml::builder().lib_path(...)` when loading NVML.
+fn nvml_lib_path_for_load() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(|root| PathBuf::from(root).join("System32").join("nvml.dll"))
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\nvml.dll"))
+}
+
+#[cfg(windows)]
+fn restrict_nvml_dll_search_directories() {
+    unsafe {
+        let _ = SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }
+}
+
+#[cfg(not(windows))]
+fn restrict_nvml_dll_search_directories() {}
+
+fn init_nvml() -> Result<Nvml, NvmlError> {
+    restrict_nvml_dll_search_directories();
+    let path = nvml_lib_path_for_load();
+    Nvml::builder().lib_path(path.as_os_str()).init()
+}
+
 fn unavailable_snapshot() -> GpuSnapshot {
     GpuSnapshot {
         name: String::new(),
@@ -216,7 +245,7 @@ pub struct NvmlGpuSource {
 
 impl NvmlGpuSource {
     pub fn new() -> Self {
-        match Nvml::init() {
+        match init_nvml() {
             Ok(nvml) => {
                 let name = match nvml.device_by_index(0) {
                     Ok(device) => device.name().unwrap_or_default(),
@@ -263,6 +292,20 @@ impl GpuSource for NvmlGpuSource {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    #[test]
+    fn nvml_loads_from_absolute_system32_path() {
+        let path = nvml_lib_path_for_load();
+        assert!(
+            path.is_absolute(),
+            "NVML must load from an absolute path, got {path:?}"
+        );
+        let text = path.to_string_lossy().replace('/', "\\");
+        assert!(
+            text.to_ascii_lowercase().ends_with("system32\\nvml.dll"),
+            "expected absolute System32\\nvml.dll path, got {path:?}"
+        );
+    }
 
     #[test]
     fn numeric_field_marks_not_supported_permanent() {
