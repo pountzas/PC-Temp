@@ -38,6 +38,7 @@ Run `pnpm check` before pushing.
 
 Integration branch: **`dev`**. Sub-PRs target `dev`, not `main`.
 
+<<<<<<< HEAD
 ## Verify release provenance
 
 Official Windows installers are built manually via the [**release** workflow](.github/workflows/release.yml) (`workflow_dispatch`). Each run uploads the NSIS `.exe` plus a sidecar `*.exe.sha256` (lowercase hex, no filename line).
@@ -61,3 +62,10 @@ Official Windows installers are built manually via the [**release** workflow](.g
    ```
 
    Successful verification confirms a Sigstore-backed attestation for that file’s digest tied to the workflow run. Installers are **not** Authenticode-signed yet; see [docs/signing-plan.md](docs/signing-plan.md) for the planned approach.
+=======
+## Designs
+
+- [PC-Temp widget](https://app.paper.design/file/01M7RQV969C1C8VB6JQ71K2MAV) — compact, expanded, mini pill, hot state, settings, and unfocused layouts.
+- Static PNG exports for offline review live under [`docs/design/`](docs/design/).
+- The Paper file is private; you need access through Nikos's Paper account to open the link.
+>>>>>>> origin/dev
