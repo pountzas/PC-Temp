@@ -19,11 +19,29 @@ use std::sync::{Arc, RwLock};
 use tauri::Manager;
 use tokio::sync::mpsc;
 
+fn base_builder() -> tauri::Builder<tauri::Wry> {
+    tauri::Builder::default().plugin(tauri_plugin_store::Builder::new().build())
+}
+
+#[cfg(all(debug_assertions, feature = "mcp-bridge"))]
+fn with_optional_mcp_bridge(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder.plugin(
+        tauri_plugin_mcp_bridge::Builder::new()
+            .bind_address("127.0.0.1")
+            .build(),
+    )
+}
+
+#[cfg(not(all(debug_assertions, feature = "mcp-bridge")))]
+fn with_optional_mcp_bridge(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     sensors::gpu::restrict_dll_search_directories();
-    tauri::Builder::default()
-        .plugin(tauri_plugin_store::Builder::new().build())
+
+    with_optional_mcp_bridge(base_builder())
         .setup(|app| {
             settings::init(app.handle());
             window::init(app.handle());

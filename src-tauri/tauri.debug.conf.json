@@ -1,0 +1,11 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "build": {
+    "features": ["mcp-bridge"]
+  },
+  "app": {
+    "security": {
+      "capabilities": ["default", "mcp-bridge-debug"]
+    }
+  }
+}

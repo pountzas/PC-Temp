@@ -10,6 +10,24 @@ Always-on-top Windows 11 hardware monitor widget (Tauri 2 + React + TypeScript +
 - **Elevated terminal required:** run `pnpm tauri dev` from an Administrator terminal; otherwise launching the dev binary fails with `os error 740` (requires elevation). The built `pc-temp.exe` shows a UAC prompt.
 - Browser-only mock sensors: `pnpm dev:mock`. Pin a scenario: `pnpm exec cross-env VITE_MOCK_FIXTURE=hot pnpm dev:mock`. Valid `VITE_MOCK_FIXTURE` values: `compact`, `expanded`, `warn`, `hot`, `no-nvml`, `no-pawnio`, `cycle` (default when unset).
 
+### MCP bridge (debug only)
+
+Release / NSIS builds **do not** ship the MCP bridge. For local automation (screenshots, IPC inspection), use the debug overlay config so the optional `mcp-bridge` Cargo feature is enabled and capabilities grant `mcp-bridge:default` only on loopback (`127.0.0.1`):
+
+```powershell
+pnpm tauri dev --config src-tauri/tauri.debug.conf.json
+# or
+pnpm tauri build --debug --config src-tauri/tauri.debug.conf.json
+```
+
+In another terminal, connect with the upstream MCP server (install once globally or via `npx`):
+
+```powershell
+npx @hypothesi/tauri-mcp-server
+```
+
+Confirm the WebSocket listens on `127.0.0.1` (e.g. `netstat -ano | findstr 127.0.0.1`) and not `0.0.0.0`. Plain `pnpm tauri dev` / release `pnpm tauri build` omit the plugin.
+
 ## Scripts
 
 | Script | Purpose |
