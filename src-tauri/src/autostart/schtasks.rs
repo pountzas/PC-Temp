@@ -45,6 +45,14 @@ pub fn interactive_run_as() -> Result<String, String> {
     Ok(format!("{domain}\\{user}"))
 }
 
+/// Absolute path to `schtasks.exe` under `%SystemRoot%\System32`.
+#[cfg(windows)]
+pub fn schtasks_exe() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(|root| PathBuf::from(root).join("System32").join("schtasks.exe"))
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\schtasks.exe"))
+}
+
 #[cfg(windows)]
 pub fn run_schtasks(args: &[String]) -> Result<std::process::Output, String> {
     use std::os::windows::process::CommandExt;
@@ -52,7 +60,7 @@ pub fn run_schtasks(args: &[String]) -> Result<std::process::Output, String> {
 
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
-    Command::new("schtasks")
+    Command::new(schtasks_exe())
         .args(args)
         .creation_flags(CREATE_NO_WINDOW)
         .output()
@@ -159,5 +167,21 @@ mod tests {
     #[test]
     fn query_args_match_spec() {
         assert_eq!(query_args(), vec!["/Query", "/TN", "PC-Temp"]);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn schtasks_exe_is_absolute_system32_path() {
+        let exe = super::schtasks_exe();
+        assert!(exe.is_absolute(), "schtasks path must be absolute: {exe:?}");
+        let path = exe.to_string_lossy();
+        assert!(
+            path.ends_with(r"\System32\schtasks.exe"),
+            "expected System32 schtasks.exe, got {path}"
+        );
+        assert!(
+            exe.components().count() >= 3,
+            "must not launch schtasks by bare name: {path}"
+        );
     }
 }
