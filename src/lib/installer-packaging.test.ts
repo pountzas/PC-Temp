@@ -100,13 +100,22 @@ describe("Windows installer packaging (#21)", () => {
 
   it("POSTINSTALL hardens install dir ACL under Program Files (#57)", () => {
     const hooks = read("src-tauri/windows/hooks.nsh");
-    expect(hooks).toMatch(/\$PROGRAMFILES64/);
+    expect(hooks).toMatch(/\$PROGRAMFILES64\\/);
     expect(hooks).toMatch(/\$SYSDIR\\icacls\.exe/);
-    expect(hooks).toMatch(/BUILTIN\\Administrators:\(OI\)\(CI\)F/i);
-    expect(hooks).toMatch(/NT AUTHORITY\\SYSTEM:\(OI\)\(CI\)F/i);
-    expect(hooks).toMatch(/TrustedInstaller:\(OI\)\(CI\)F/i);
-    expect(hooks).toMatch(/BUILTIN\\Users:\(OI\)\(CI\)RX/i);
+    expect(hooks).toContain("*S-1-5-32-544:(OI)(CI)F");
+    expect(hooks).toContain("*S-1-5-18:(OI)(CI)F");
+    expect(hooks).toContain(
+      "*S-1-5-80-956008885-3418522649-1831038044-1853292631-2271478464:(OI)(CI)F",
+    );
+    expect(hooks).toContain("*S-1-5-32-545:(OI)(CI)RX");
+    expect(hooks).toMatch(/\$INSTDIR\\\*" \/reset \/T/);
     expect(hooks).toMatch(/\/inheritance:r/i);
+    expect(hooks).not.toMatch(/inheritance:r[^`]*\/T/);
+    const pawnioIdx = hooks.indexOf("install-pawnio.ps1");
+    const hardenIdx = hooks.indexOf("Hardening install folder");
+    expect(hardenIdx).toBeGreaterThan(-1);
+    expect(pawnioIdx).toBeGreaterThan(-1);
+    expect(hardenIdx).toBeLessThan(pawnioIdx);
   });
 
   it("release workflow is manual dispatch with SHA-pinned actions and bundle asserts", () => {
