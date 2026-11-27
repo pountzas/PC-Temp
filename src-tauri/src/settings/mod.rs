@@ -101,18 +101,20 @@ fn apply_patch(settings: &mut Settings, patch: &SettingsPatch) {
     }
 }
 
-fn finalize_loaded_settings(mut loaded: Settings, first_run: bool) -> Settings {
+fn finalize_loaded_settings(
+    mut loaded: Settings,
+    autostart_registered: impl FnOnce() -> bool,
+) -> Settings {
     loaded = sanitize_for_startup(loaded);
-    if !first_run {
-        loaded.start_with_windows = crate::autostart::is_enabled();
-    }
+    // Reflect Task Scheduler state; never create a task here (issue #58).
+    loaded.start_with_windows = autostart_registered();
     loaded
 }
 
 pub fn init(app: &AppHandle) {
     let _ = APP.set(app.clone());
     let (loaded, first_run) = load_from_store(app);
-    let loaded = finalize_loaded_settings(loaded, first_run);
+    let loaded = finalize_loaded_settings(loaded, crate::autostart::is_enabled);
 
     {
         let mut guard = memory().write().unwrap_or_else(|e| e.into_inner());
@@ -244,9 +246,20 @@ mod tests {
     #[test]
     fn first_run_does_not_opt_in_to_autostart() {
         let loaded = Settings::default_v1();
-        assert!(!loaded.start_with_windows);
-        let prepared = finalize_loaded_settings(loaded, true);
+        assert!(
+            !loaded.start_with_windows,
+            "default must be opt-out (#58)"
+        );
+        let prepared = finalize_loaded_settings(loaded, || false);
         assert!(!prepared.start_with_windows);
+    }
+
+    #[test]
+    fn startup_reflects_existing_logon_task() {
+        let mut stored = Settings::default_v1();
+        stored.start_with_windows = false;
+        let prepared = finalize_loaded_settings(stored, || true);
+        assert!(prepared.start_with_windows);
     }
 
     #[test]
