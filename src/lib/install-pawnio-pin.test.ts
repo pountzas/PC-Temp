@@ -20,9 +20,15 @@ const isWindows = process.platform === "win32";
 
 const windowsPowerShell = "powershell.exe";
 
-/** Windows PowerShell 5.1 must not inherit PS7's PSModulePath (breaks Get-FileHash). */
-const psEnv = { ...process.env };
-delete psEnv.PSModulePath;
+/** Use PS 5.1 module path only; inheriting PS7's PSModulePath breaks Get-FileHash in 5.1. */
+const ps51Modules = join(
+  process.env.SystemRoot ?? "C:\\Windows",
+  "System32",
+  "WindowsPowerShell",
+  "v1.0",
+  "Modules",
+);
+const psEnv = { ...process.env, PSModulePath: ps51Modules };
 
 describe("PawnIO 2.2.0 pin (#56)", () => {
   it("declares pinned SHA-256 and signer thumbprint constants", () => {
