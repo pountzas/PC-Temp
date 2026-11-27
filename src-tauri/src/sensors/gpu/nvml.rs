@@ -3,6 +3,12 @@ use crate::sensors::source::{GpuReading, GpuSource};
 use nvml_wrapper::enum_wrappers::device::{Clock, TemperatureSensor};
 use nvml_wrapper::error::NvmlError;
 use nvml_wrapper::Nvml;
+use std::path::PathBuf;
+
+#[cfg(windows)]
+use windows_sys::Win32::System::LibraryLoader::{
+    SetDefaultDllDirectories, LOAD_LIBRARY_SEARCH_SYSTEM32,
+};
 
 pub const BYTES_PER_MIB: u64 = 1_048_576;
 const MAX_TRANSIENT_FAILURES: u8 = 3;
@@ -196,6 +202,58 @@ fn poll_gpu_snapshot<R: NvmlDeviceReadings>(
     }
 }
 
+fn nvml_lib_path_for_load() -> PathBuf {
+    nvml_lib_path_from(system32_dir())
+}
+
+/// Only trust an absolute System32 directory; otherwise use the fixed default.
+fn nvml_lib_path_from(system_dir: Option<PathBuf>) -> PathBuf {
+    match system_dir {
+        Some(dir) if dir.is_absolute() => dir.join("nvml.dll"),
+        _ => PathBuf::from(r"C:\Windows\System32\nvml.dll"),
+    }
+}
+
+#[cfg(windows)]
+fn system32_dir() -> Option<PathBuf> {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+
+    let mut buf = [0u16; 260];
+    // SAFETY: `buf` is valid for `buf.len()` u16 writes.
+    let len = unsafe { GetSystemDirectoryW(buf.as_mut_ptr(), buf.len() as u32) } as usize;
+    if len == 0 || len >= buf.len() {
+        return None;
+    }
+    Some(PathBuf::from(OsString::from_wide(&buf[..len])))
+}
+
+#[cfg(not(windows))]
+fn system32_dir() -> Option<PathBuf> {
+    None
+}
+
+#[cfg(windows)]
+pub(crate) fn restrict_dll_search_directories() {
+    // SAFETY: plain Win32 call with a constant flag.
+    let ok = unsafe { SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32) };
+    if ok == 0 {
+        log::warn!(
+            "SetDefaultDllDirectories(SYSTEM32) failed: {}",
+            std::io::Error::last_os_error()
+        );
+    }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn restrict_dll_search_directories() {}
+
+fn init_nvml() -> Result<Nvml, NvmlError> {
+    let path = nvml_lib_path_for_load();
+    Nvml::builder().lib_path(path.as_os_str()).init()
+}
+
 fn unavailable_snapshot() -> GpuSnapshot {
     GpuSnapshot {
         name: String::new(),
@@ -216,7 +274,7 @@ pub struct NvmlGpuSource {
 
 impl NvmlGpuSource {
     pub fn new() -> Self {
-        match Nvml::init() {
+        match init_nvml() {
             Ok(nvml) => {
                 let name = match nvml.device_by_index(0) {
                     Ok(device) => device.name().unwrap_or_default(),
@@ -263,6 +321,56 @@ impl GpuSource for NvmlGpuSource {
 mod tests {
     use super::*;
     use std::cell::RefCell;
+
+    #[test]
+    fn nvml_loads_from_absolute_system32_path() {
+        let path = nvml_lib_path_for_load();
+        assert!(
+            path.is_absolute(),
+            "NVML must load from an absolute path, got {path:?}"
+        );
+        let text = path.to_string_lossy().replace('/', "\\");
+        assert!(
+            text.to_ascii_lowercase().ends_with("system32\\nvml.dll"),
+            "expected absolute System32\\nvml.dll path, got {path:?}"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_rejects_empty_system_dir() {
+        assert_eq!(
+            nvml_lib_path_from(Some(PathBuf::new())),
+            PathBuf::from(r"C:\Windows\System32\nvml.dll")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_rejects_relative_system_dir() {
+        assert_eq!(
+            nvml_lib_path_from(Some(PathBuf::from("System32"))),
+            PathBuf::from(r"C:\Windows\System32\nvml.dll")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_uses_absolute_system_dir() {
+        assert_eq!(
+            nvml_lib_path_from(Some(PathBuf::from(r"D:\Win\System32"))),
+            PathBuf::from(r"D:\Win\System32\nvml.dll")
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn nvml_path_falls_back_when_unavailable() {
+        assert_eq!(
+            nvml_lib_path_from(None),
+            PathBuf::from(r"C:\Windows\System32\nvml.dll")
+        );
+    }
 
     #[test]
     fn numeric_field_marks_not_supported_permanent() {

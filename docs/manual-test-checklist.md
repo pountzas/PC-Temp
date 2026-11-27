@@ -37,6 +37,11 @@ Run elevated on the target machine (Intel Core i7-3770K + NVIDIA GeForce GTX 980
 - [ ] Quit leaves no `lhm-reader.exe`; CPU/RAM use of the widget at 1 s recorded.
 - [ ] Installer + uninstaller (task removed).
 
+## MCP bridge smoke (issue #76, manual — Nikos)
+
+- [ ] With `pnpm tauri dev --config src-tauri/tauri.debug.conf.json`, `netstat` shows the bridge on `127.0.0.1` only (not `0.0.0.0`); `npx @hypothesi/tauri-mcp-server` can attach and capture a screenshot.
+- [ ] Release `pnpm tauri build` (no debug config): no MCP bridge port; `cargo tree -p pc-temp --release` omits `tauri-plugin-mcp-bridge`.
+
 ## Follow-up
 
 Record max temps under load and OQ-22 (Mica + shadow) in epic #1. File failures as follow-up issues; do not block this checklist on automated integration tests.

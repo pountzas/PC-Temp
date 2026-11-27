@@ -43,8 +43,50 @@ function Test-PawnIOSetupAuthenticode {
     return $subject -match 'namazso'
 }
 
+function Get-PawnIOSetupDownloadDir {
+    $dir = Join-Path $env:ProgramData ('PC-Temp-pawnio-setup-' + [guid]::NewGuid().ToString('N'))
+    if (Test-Path -LiteralPath $dir) {
+        throw "Refusing to reuse existing PawnIO download folder $dir."
+    }
+
+    $acl = New-Object System.Security.AccessControl.DirectorySecurity
+    $acl.SetAccessRuleProtection($true, $false)
+    $admins = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544'
+    $system = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-18'
+    $acl.SetOwner($admins)
+    foreach ($sid in @($system, $admins)) {
+        $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+            $sid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow')
+        $acl.AddAccessRule($rule)
+    }
+
+    [System.IO.Directory]::CreateDirectory($dir, $acl) | Out-Null
+
+    $item = Get-Item -LiteralPath $dir -Force
+    if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        throw "PawnIO download folder $dir is a reparse point."
+    }
+    return $dir
+}
+
+function Remove-PawnIOSetupDownloadDir {
+    param([Parameter(Mandatory)] [string]$Dir)
+
+    if (-not (Test-Path -LiteralPath $Dir)) {
+        return
+    }
+    $item = Get-Item -LiteralPath $Dir -Force
+    if ($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) {
+        [System.IO.Directory]::Delete($Dir, $false)
+        return
+    }
+    Remove-Item -LiteralPath $Dir -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Get-PawnIOSetupExe {
-    $dest = Join-Path $env:TEMP 'PC-Temp-PawnIO_setup.exe'
+    param([Parameter(Mandatory)] [string]$DownloadDir)
+
+    $dest = Join-Path $DownloadDir 'PawnIO_setup.exe'
     if (Test-Path -LiteralPath $dest) {
         Remove-Item -Force -LiteralPath $dest
     }
@@ -90,8 +132,10 @@ if (Test-PawnIOInstalled) {
     exit 0
 }
 
+$pawnioSetupDownloadDir = $null
 try {
-    $setup = Get-PawnIOSetupExe
+    $pawnioSetupDownloadDir = Get-PawnIOSetupDownloadDir
+    $setup = Get-PawnIOSetupExe -DownloadDir $pawnioSetupDownloadDir
     if (-not (Test-PawnIOSetupAuthenticode -Path $setup)) {
         throw 'PawnIO setup failed Authenticode verification (expected valid namazso signature).'
     }
@@ -114,4 +158,8 @@ try {
     Write-InstallDetail "PawnIO install step failed: $($_.Exception.Message)"
     Show-PawnIOManualInstallNotice
     exit 0
+} finally {
+    if ($pawnioSetupDownloadDir) {
+        Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
+    }
 }
