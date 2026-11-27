@@ -34,23 +34,36 @@ pub enum LhmClientError {
     Starting,
 }
 
+/// Release builds with no bundled sidecar fail resolution (never a bare filename for PATH lookup).
+#[cfg(any(test, not(debug_assertions)))]
+pub(crate) fn resolve_binary_for_release_missing_bundle(
+    host_exe_dir: &Path,
+) -> Result<PathBuf, LhmClientError> {
+    let expected = host_exe_dir.join(BUNDLED_BINARY);
+    Err(LhmClientError::BinaryNotFound(expected))
+}
+
 /// Resolves the sidecar executable: bundled next to the host exe, else dev binary in debug builds only.
-pub fn resolve_binary_path() -> PathBuf {
+pub fn resolve_binary_path() -> Result<PathBuf, LhmClientError> {
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
             let bundled = dir.join(BUNDLED_BINARY);
             if bundled.is_file() {
-                return bundled;
+                return Ok(bundled);
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                return resolve_binary_for_release_missing_bundle(dir);
             }
         }
     }
     #[cfg(debug_assertions)]
     {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEV_BINARY)
+        Ok(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(DEV_BINARY))
     }
     #[cfg(not(debug_assertions))]
     {
-        PathBuf::from(BUNDLED_BINARY)
+        resolve_binary_for_release_missing_bundle(Path::new("."))
     }
 }
 
@@ -351,7 +364,17 @@ pub struct LhmClient {
 
 impl LhmClient {
     pub fn try_spawn() -> Option<Self> {
-        let path = resolve_binary_path();
+        let path = match resolve_binary_path() {
+            Ok(path) => path,
+            Err(LhmClientError::BinaryNotFound(path)) => {
+                log::info!("lhm-reader not found at {}", path.display());
+                return None;
+            }
+            Err(err) => {
+                log::warn!("failed to resolve lhm-reader path: {err}");
+                return None;
+            }
+        };
         if !path.is_file() {
             log::info!("lhm-reader not found at {}", path.display());
             return None;
@@ -460,8 +483,25 @@ mod tests {
     }
 
     #[test]
+    fn release_missing_bundled_sidecar_returns_binary_not_found_with_full_path() {
+        let dir =
+            std::env::temp_dir().join(format!("pc_temp_lhm_resolve_test_{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("mkdir");
+        let outcome = resolve_binary_for_release_missing_bundle(&dir);
+        match outcome {
+            Err(LhmClientError::BinaryNotFound(path)) => {
+                assert_eq!(path, dir.join(BUNDLED_BINARY));
+                assert_ne!(path, PathBuf::from(BUNDLED_BINARY));
+            }
+            other => panic!("expected BinaryNotFound, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn dev_fallback_binary_path_when_bundled_missing() {
-        let path = resolve_binary_path();
+        let path = resolve_binary_path().expect("debug resolve");
         #[cfg(debug_assertions)]
         {
             let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
