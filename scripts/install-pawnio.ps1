@@ -43,8 +43,24 @@ function Test-PawnIOSetupAuthenticode {
     return $subject -match 'namazso'
 }
 
+function Get-PawnIOSetupDownloadDir {
+    $dir = Join-Path $env:ProgramData 'PC-Temp\pawnio-setup'
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    return $dir
+}
+
+function Remove-PawnIOSetupDownloadDir {
+    param([Parameter(Mandatory)] [string]$Dir)
+
+    if (Test-Path -LiteralPath $Dir) {
+        Remove-Item -LiteralPath $Dir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-PawnIOSetupExe {
-    $dest = Join-Path $env:TEMP 'PC-Temp-PawnIO_setup.exe'
+    param([Parameter(Mandatory)] [string]$DownloadDir)
+
+    $dest = Join-Path $DownloadDir 'PawnIO_setup.exe'
     if (Test-Path -LiteralPath $dest) {
         Remove-Item -Force -LiteralPath $dest
     }
@@ -90,8 +106,10 @@ if (Test-PawnIOInstalled) {
     exit 0
 }
 
+$pawnioSetupDownloadDir = $null
 try {
-    $setup = Get-PawnIOSetupExe
+    $pawnioSetupDownloadDir = Get-PawnIOSetupDownloadDir
+    $setup = Get-PawnIOSetupExe -DownloadDir $pawnioSetupDownloadDir
     if (-not (Test-PawnIOSetupAuthenticode -Path $setup)) {
         throw 'PawnIO setup failed Authenticode verification (expected valid namazso signature).'
     }
@@ -114,4 +132,8 @@ try {
     Write-InstallDetail "PawnIO install step failed: $($_.Exception.Message)"
     Show-PawnIOManualInstallNotice
     exit 0
+} finally {
+    if ($pawnioSetupDownloadDir) {
+        Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
+    }
 }

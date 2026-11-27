@@ -61,6 +61,14 @@ describe("Windows installer packaging (#21)", () => {
     expect(ps1).toMatch(/NoPrompt/);
   });
 
+  it("install-pawnio downloads setup outside TEMP to an admin-writable folder (#54)", () => {
+    const ps1 = read("scripts/install-pawnio.ps1");
+    expect(ps1).not.toMatch(/\$env:TEMP[^\r\n]*PawnIO_setup/i);
+    expect(ps1).not.toMatch(/Join-Path\s+\$env:TEMP/i);
+    expect(ps1).toMatch(/ProgramData|CommonProgramData|PSScriptRoot/i);
+    expect(ps1).toMatch(/Remove-Item|RemoveDirectory|finally/i);
+  });
+
   it("NSIS hooks run PawnIO at INSTDIR and remove the PC-Temp scheduled task", () => {
     const hooks = read("src-tauri/windows/hooks.nsh");
     expect(hooks).toMatch(/NSIS_HOOK_POSTINSTALL/);
