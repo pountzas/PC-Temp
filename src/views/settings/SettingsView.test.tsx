@@ -139,12 +139,12 @@ describe("SettingsView", () => {
     render(<SettingsView settings={defaultSettings()} />);
     const toggle = screen.getByRole("switch", { name: "Start with Windows" });
 
-    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
     fireEvent.click(toggle);
 
     await waitFor(() => {
       expect(toggle.getAttribute("aria-busy")).toBe("true");
-      expect(toggle.getAttribute("aria-checked")).toBe("false");
+      expect(toggle.getAttribute("aria-checked")).toBe("true");
     });
 
     resolve(defaultSettings());
@@ -163,7 +163,7 @@ describe("SettingsView", () => {
     fireEvent.click(toggle);
 
     await waitFor(() => {
-      expect(toggle.getAttribute("aria-checked")).toBe("true");
+      expect(toggle.getAttribute("aria-checked")).toBe("false");
     });
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();

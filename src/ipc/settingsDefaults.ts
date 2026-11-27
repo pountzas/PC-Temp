@@ -8,7 +8,7 @@ export function defaultSettings(): Settings {
     alwaysOnTop: true,
     units: "C",
     intervalMs: 1000,
-    startWithWindows: true,
+    startWithWindows: false,
     accent: "#22E5FF",
     view: "compact",
     lastUndockedView: "compact",

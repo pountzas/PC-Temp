@@ -101,26 +101,18 @@ fn apply_patch(settings: &mut Settings, patch: &SettingsPatch) {
     }
 }
 
-fn sync_autostart_on_first_run(settings: &mut Settings) {
-    match crate::autostart::set_enabled(true) {
-        Ok(()) => settings.start_with_windows = true,
-        Err(e) => {
-            log::error!("first-run autostart enable failed: {e}");
-            settings.start_with_windows = false;
-        }
-    }
-}
-
-pub fn init(app: &AppHandle) {
-    let _ = APP.set(app.clone());
-    let (mut loaded, first_run) = load_from_store(app);
-    if first_run {
-        sync_autostart_on_first_run(&mut loaded);
-    }
+fn finalize_loaded_settings(mut loaded: Settings, first_run: bool) -> Settings {
     loaded = sanitize_for_startup(loaded);
     if !first_run {
         loaded.start_with_windows = crate::autostart::is_enabled();
     }
+    loaded
+}
+
+pub fn init(app: &AppHandle) {
+    let _ = APP.set(app.clone());
+    let (loaded, first_run) = load_from_store(app);
+    let loaded = finalize_loaded_settings(loaded, first_run);
 
     {
         let mut guard = memory().write().unwrap_or_else(|e| e.into_inner());
@@ -247,6 +239,14 @@ mod tests {
 
         let after = memory().read().expect("lock").clone();
         assert_eq!(after, before);
+    }
+
+    #[test]
+    fn first_run_does_not_opt_in_to_autostart() {
+        let loaded = Settings::default_v1();
+        assert!(!loaded.start_with_windows);
+        let prepared = finalize_loaded_settings(loaded, true);
+        assert!(!prepared.start_with_windows);
     }
 
     #[test]
