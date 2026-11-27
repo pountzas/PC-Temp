@@ -61,12 +61,24 @@ describe("Windows installer packaging (#21)", () => {
     expect(ps1).toMatch(/NoPrompt/);
   });
 
-  it("install-pawnio downloads setup outside TEMP to an admin-writable folder (#54)", () => {
+  it("install-pawnio downloads setup outside TEMP to an admin-only folder (#54)", () => {
     const ps1 = read("scripts/install-pawnio.ps1");
-    expect(ps1).not.toMatch(/\$env:TEMP[^\r\n]*PawnIO_setup/i);
-    expect(ps1).not.toMatch(/Join-Path\s+\$env:TEMP/i);
-    expect(ps1).toMatch(/ProgramData|CommonProgramData|PSScriptRoot/i);
-    expect(ps1).toMatch(/Remove-Item|RemoveDirectory|finally/i);
+    expect(ps1).not.toMatch(/\$env:TEMP/i);
+    expect(ps1).toMatch(
+      /Join-Path\s+\$env:ProgramData\s+\([^)]*NewGuid\(\)/,
+    );
+    expect(ps1).not.toMatch(/PC-Temp\\pawnio-setup'/);
+    expect(ps1).toMatch(/SetAccessRuleProtection\(\$true,\s*\$false\)/);
+    expect(ps1).toMatch(/S-1-5-32-544/);
+    expect(ps1).toMatch(/S-1-5-18/);
+    expect(ps1).toMatch(
+      /\[System\.IO\.Directory\]::CreateDirectory\(\$dir,\s*\$acl\)/,
+    );
+    expect(ps1).toMatch(/ReparsePoint/);
+    expect(
+      ps1.indexOf("Test-PawnIOSetupAuthenticode -Path $setup"),
+    ).toBeLessThan(ps1.indexOf("Invoke-PawnIOSetup -SetupPath $setup"));
+    expect(ps1).toMatch(/finally\s*\{[\s\S]*Remove-PawnIOSetupDownloadDir/);
   });
 
   it("NSIS hooks run PawnIO at INSTDIR and remove the PC-Temp scheduled task", () => {
