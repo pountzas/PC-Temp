@@ -24,7 +24,8 @@
         "shadow": true,
         "windowEffects": {
           "effects": ["mica"]
-        }
+        },
+        "theme": "Dark"
       },
       {
         "label": "settings",
@@ -41,7 +42,8 @@
         "shadow": true,
         "windowEffects": {
           "effects": ["mica"]
-        }
+        },
+        "theme": "Dark"
       }
     ],
     "security": {
