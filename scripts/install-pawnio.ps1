@@ -74,16 +74,105 @@ function Test-PawnIOInstalled {
     return $false
 }
 
+function Initialize-PawnIOAuthenticodeHelper {
+    if (([System.Management.Automation.PSTypeName]'PawnIOAuthenticode').Type) {
+        return
+    }
+
+    $code = @'
+using System;
+using System.Runtime.InteropServices;
+
+public static class PawnIOAuthenticode {
+    private static readonly IntPtr InvalidHandle = new IntPtr(-1);
+    private static readonly Guid WinTrustVerify = new Guid("{00AAC56B-CD44-11d0-8CC2-00C04FC295EE}");
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct WinTrustFileInfo {
+        public uint cbStruct;
+        public string pcwszFilePath;
+        public IntPtr hFile;
+        public IntPtr pgKnownSubject;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WinTrustData {
+        public uint cbStruct;
+        public IntPtr pPolicyCallbackData;
+        public IntPtr pSIPClientData;
+        public uint dwUIChoice;
+        public uint fdwRevocationChecks;
+        public uint dwUnionChoice;
+        public IntPtr pFile;
+        public uint dwStateAction;
+        public IntPtr hWVTStateData;
+        public IntPtr pwszURLReference;
+        public uint dwProvFlags;
+        public uint dwUIContext;
+    }
+
+    private const uint WtdUiNone = 2;
+    private const uint WtdRevokeNone = 0;
+    private const uint WtdChoiceFile = 1;
+    private const uint WtdStateActionVerify = 1;
+    private const uint WtdStateActionClose = 2;
+    private const uint WtdCacheOnlyUrlRetrieval = 0x1000;
+
+    [DllImport("wintrust.dll", ExactSpelling = true, SetLastError = false, CharSet = CharSet.Unicode)]
+    private static extern int WinVerifyTrust(IntPtr hwnd, [MarshalAs(UnmanagedType.LPStruct)] Guid pgActionID, ref WinTrustData pWVTData);
+
+    public static bool VerifyAuthenticodeSignature(string path) {
+        var fileInfo = new WinTrustFileInfo {
+            cbStruct = (uint)Marshal.SizeOf(typeof(WinTrustFileInfo)),
+            pcwszFilePath = path,
+            hFile = InvalidHandle,
+            pgKnownSubject = IntPtr.Zero,
+        };
+
+        var fileInfoPtr = Marshal.AllocHGlobal(Marshal.SizeOf(typeof(WinTrustFileInfo)));
+        try {
+            Marshal.StructureToPtr(fileInfo, fileInfoPtr, false);
+
+            var trustData = new WinTrustData {
+                cbStruct = (uint)Marshal.SizeOf(typeof(WinTrustData)),
+                dwUIChoice = WtdUiNone,
+                fdwRevocationChecks = WtdRevokeNone,
+                dwUnionChoice = WtdChoiceFile,
+                pFile = fileInfoPtr,
+                dwStateAction = WtdStateActionVerify,
+                dwProvFlags = WtdCacheOnlyUrlRetrieval,
+            };
+
+            int result = WinVerifyTrust(IntPtr.Zero, WinTrustVerify, ref trustData);
+            trustData.dwStateAction = WtdStateActionClose;
+            WinVerifyTrust(IntPtr.Zero, WinTrustVerify, ref trustData);
+            return result == 0;
+        } finally {
+            Marshal.FreeHGlobal(fileInfoPtr);
+        }
+    }
+}
+'@
+
+    Add-Type -TypeDefinition $code -Language CSharp -ErrorAction Stop
+}
+
 function Test-PawnIOSetupAuthenticode {
     param([Parameter(Mandatory)] [string]$Path)
 
-    $sig = Get-AuthenticodeSignature -FilePath $Path
-    if ($sig.Status -ne 'Valid') {
-        Write-InstallDetail "PawnIO setup Authenticode status is $($sig.Status) (expected Valid)."
+    Initialize-PawnIOAuthenticodeHelper
+    if (-not [PawnIOAuthenticode]::VerifyAuthenticodeSignature($Path)) {
+        Write-InstallDetail 'PawnIO setup Authenticode status is NotValid (expected Valid).'
         return $false
     }
 
-    $actualThumbprint = $sig.SignerCertificate.Thumbprint.ToUpperInvariant()
+    $signerCert = [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromSignedFile($Path)
+    try {
+        $actualThumbprint = $signerCert.GetCertHashString().ToUpperInvariant()
+    } finally {
+        $signerCert.Dispose()
+    }
+
     $expectedThumbprint = $script:PAWNIO_SIGNER_THUMBPRINT.ToUpperInvariant()
     if ($actualThumbprint -ne $expectedThumbprint) {
         Write-InstallDetail "PawnIO setup signer thumbprint mismatch: expected $expectedThumbprint, actual $actualThumbprint."
@@ -257,6 +346,10 @@ function Invoke-PawnIOInstall {
             Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
         }
     }
+}
+
+if ($MyInvocation.InvocationName -eq '.') {
+    Initialize-PawnIOAuthenticodeHelper
 }
 
 if ($MyInvocation.InvocationName -ne '.') {

@@ -39,7 +39,9 @@ describe("PawnIO 2.2.0 pin (#56)", () => {
     expect(ps1).toContain(OFFICIAL_PAWNIO_220_SHA256);
     expect(ps1).toContain(OFFICIAL_PAWNIO_220_SIGNER_THUMBPRINT);
     expect(ps1).toMatch(/Security\.Cryptography\.SHA256/);
-    expect(ps1).toMatch(/SignerCertificate\.Thumbprint/);
+    expect(ps1).toMatch(/CreateFromSignedFile/);
+    expect(ps1).toMatch(/GetCertHashString/);
+    expect(ps1).toMatch(/VerifyAuthenticodeSignature/);
     expect(ps1).toMatch(/function Invoke-PawnIOInstall/);
     expect(ps1).toContain(`$script:PAWNIO_PIN_MISMATCH_EXIT = ${PAWNIO_PIN_MISMATCH_EXIT}`);
     expect(ps1).toMatch(/Start-Service/);
