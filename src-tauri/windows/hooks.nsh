@@ -15,8 +15,12 @@
     ${If} ${Silent}
       StrCpy $R0 "-NoPrompt"
     ${EndIf}
-    ExecWait `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\install-pawnio.ps1" -Quiet $R0` $0
+    nsExec::ExecToLog `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "$INSTDIR\install-pawnio.ps1" $R0`
+    Pop $0
     DetailPrint "PawnIO step finished (exit $0)."
+    ${If} $0 == 56
+      DetailPrint "WARNING: PawnIO download failed release pin verification; install PawnIO manually."
+    ${EndIf}
   pawnio_run_done:
 !macroend
 

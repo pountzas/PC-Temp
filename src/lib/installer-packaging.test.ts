@@ -54,7 +54,10 @@ describe("Windows installer packaging (#21)", () => {
     expect(ps1).toContain("PawnIO_setup.exe");
     expect(ps1).toMatch(/-install/);
     expect(ps1).toMatch(/-silent/);
-    expect(ps1).toMatch(/Get-AuthenticodeSignature/);
+    expect(ps1).toMatch(/CreateFromSignedFile/);
+    expect(ps1).toMatch(/VerifyAuthenticodeSignature/);
+    expect(ps1).toContain("PAWNIO_SETUP_SHA256");
+    expect(ps1).toMatch(/function Invoke-PawnIOInstall/);
     expect(ps1).toMatch(/3010/);
     expect(ps1).toMatch(/ProgressPreference\s*=\s*'SilentlyContinue'/);
     expect(ps1).toMatch(/TimeoutSec\s+120/);
@@ -96,6 +99,9 @@ describe("Windows installer packaging (#21)", () => {
     expect(hooks).toContain("$SYSDIR\\schtasks.exe");
     expect(hooks).not.toMatch(/ExecWait[^`]*`powershell\.exe /);
     expect(hooks).not.toMatch(/ExecWait[^`]*`schtasks\.exe /);
+    expect(hooks).toMatch(/\$\{If\} \$0 == 56/);
+    expect(hooks).toMatch(/nsExec::ExecToLog/);
+    expect(hooks).toMatch(/WARNING: PawnIO download failed release pin verification/);
   });
 
   it("release workflow is manual dispatch with SHA-pinned actions and bundle asserts", () => {
