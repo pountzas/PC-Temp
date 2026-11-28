@@ -9,6 +9,8 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 const READ_TIMEOUT: Duration = Duration::from_millis(500);
+/// First read can exceed 500ms while LibreHardwareMonitor initializes in the sidecar.
+const STARTUP_READ_TIMEOUT: Duration = Duration::from_millis(2500);
 const STARTUP_GRACE: Duration = Duration::from_secs(10);
 const QUIT_WAIT: Duration = Duration::from_millis(500);
 const DEV_BINARY: &str = "binaries/lhm-reader-x86_64-pc-windows-msvc.exe";
@@ -125,6 +127,11 @@ impl StdoutPump {
         while self.rx.try_recv().is_ok() {}
     }
 
+    #[cfg(test)]
+    fn from_receiver(rx: mpsc::Receiver<io::Result<String>>) -> Self {
+        Self { rx }
+    }
+
     fn recv_line(
         &self,
         timeout: Duration,
@@ -132,7 +139,9 @@ impl StdoutPump {
         ready: bool,
         spawned_at: Instant,
     ) -> Result<String, LhmClientError> {
-        self.drain_stale();
+        if ready {
+            self.drain_stale();
+        }
         match self.rx.recv_timeout(timeout) {
             Ok(Ok(line)) => Ok(line),
             Ok(Err(err)) => {
@@ -250,8 +259,13 @@ impl LhmChild {
             .write_all(LhmReadCmd::read_line().as_bytes())
             .map_err(LhmClientError::Spawn)?;
         self.stdin.flush().map_err(LhmClientError::Spawn)?;
+        let timeout = if self.ready {
+            READ_TIMEOUT
+        } else {
+            STARTUP_READ_TIMEOUT
+        };
         let line = self.stdout_pump.recv_line(
-            READ_TIMEOUT,
+            timeout,
             &mut self.broken,
             self.ready,
             self.spawned_at,
@@ -543,6 +557,47 @@ mod tests {
         assert_eq!(LhmReadCmd::read_line(), "{\"cmd\":\"read\"}\n");
     }
 
+    #[test]
+    fn recv_keeps_queued_line_while_not_ready() {
+        let (tx, rx) = mpsc::channel();
+        let pump = StdoutPump::from_receiver(rx);
+        tx.send(Ok("first-line\n".into())).expect("send");
+        let mut broken = false;
+        let line = pump
+            .recv_line(
+                READ_TIMEOUT,
+                &mut broken,
+                false,
+                Instant::now() - STARTUP_GRACE,
+            )
+            .expect("first line");
+        assert_eq!(line, "first-line\n");
+        assert!(!broken);
+    }
+
+    #[test]
+    fn recv_drains_stale_lines_when_ready() {
+        let (tx, rx) = mpsc::channel();
+        let pump = StdoutPump::from_receiver(rx);
+        tx.send(Ok("stale-from-prior-request\n".into()))
+            .expect("send stale");
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(50));
+            let _ = tx.send(Ok("current-request\n".into()));
+        });
+        let mut broken = false;
+        let line = pump
+            .recv_line(
+                READ_TIMEOUT,
+                &mut broken,
+                true,
+                Instant::now(),
+            )
+            .expect("current line");
+        assert_eq!(line, "current-request\n");
+        assert!(!broken);
+    }
+
     #[cfg(windows)]
     mod fake_child {
         use super::*;
@@ -635,9 +690,16 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
             cmd
         }
 
-        fn slow_sidecar_command(delay_ms: u64) -> Command {
+        fn slow_sidecar_file_command(delay_ms: u64) -> Command {
+            use std::sync::atomic::{AtomicU32, Ordering};
+            static SEQ: AtomicU32 = AtomicU32::new(0);
             let fixture_json = fs::read_to_string(lhm_fixture_path()).expect("fixture");
             let json_escaped = fixture_json.trim().replace('\'', "''");
+            let script_path = std::env::temp_dir().join(format!(
+                "pc_temp_lhm_slow_{}_{}.ps1",
+                std::process::id(),
+                SEQ.fetch_add(1, Ordering::Relaxed)
+            ));
             let script = format!(
                 "$json = '{json_escaped}'\n\
 $reader = New-Object System.IO.StreamReader([Console]::OpenStandardInput())\n\
@@ -647,48 +709,47 @@ while ($null -ne ($line = $reader.ReadLine())) {{\n\
   if ($line -match 'read') {{ Start-Sleep -Milliseconds {delay_ms}; $writer.WriteLine($json); $writer.Flush() }}\n\
 }}\n"
             );
+            fs::write(&script_path, script).expect("write slow sidecar script");
             let mut cmd = Command::new(powershell_exe());
             cmd.args([
                 "-NoProfile",
                 "-NonInteractive",
                 "-ExecutionPolicy",
                 "Bypass",
-                "-Command",
-                &script,
+                "-File",
+                script_path.to_str().expect("script path utf-8"),
             ]);
             cmd
         }
 
         #[test]
+        fn first_read_760ms_succeeds_and_sets_ready() {
+            let _lock = ps_test_lock();
+            let mut child =
+                LhmChild::spawn_command(slow_sidecar_file_command(760)).expect("spawn");
+            std::thread::sleep(fake_child_startup_delay());
+            let cpu = child.request_read().expect("760ms first read");
+            assert_eq!(cpu.name, "Intel Core i7-3770K");
+            assert!(child.ready, "successful read must mark sidecar ready");
+            assert!(!child.broken);
+            child.send_quit();
+        }
+
+        #[test]
         fn slow_startup_within_grace_succeeds_without_broken() {
             let _lock = ps_test_lock();
-            let mut child = LhmChild::spawn_command(slow_sidecar_command(1500)).expect("spawn");
-            let first = child.request_read();
-            match first {
-                Err(LhmClientError::Starting) => {}
-                Ok(_) => {}
-                Err(err) => panic!("unexpected: {err}"),
-            }
+            let mut child =
+                LhmChild::spawn_command(slow_sidecar_file_command(1500)).expect("spawn");
+            std::thread::sleep(fake_child_startup_delay());
+            let cpu = child
+                .request_read()
+                .expect("slow first read within startup timeout");
+            assert_eq!(cpu.name, "Intel Core i7-3770K");
             assert!(
                 !child.broken,
-                "timeout during startup grace must not mark broken"
+                "slow startup must not mark broken before grace expires"
             );
-            let mut cpu = None;
-            for _ in 0..8 {
-                match child.request_read() {
-                    Ok(parsed) => {
-                        cpu = Some(parsed);
-                        break;
-                    }
-                    Err(LhmClientError::Starting) => {
-                        std::thread::sleep(Duration::from_millis(400));
-                    }
-                    Err(err) => panic!("read after grace: {err}"),
-                }
-            }
-            let cpu = cpu.expect("slow sidecar should answer within startup grace");
-            assert_eq!(cpu.name, "Intel Core i7-3770K");
-            assert!(!child.broken);
+            assert!(child.ready);
             child.send_quit();
         }
 
