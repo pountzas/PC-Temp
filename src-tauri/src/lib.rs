@@ -20,7 +20,9 @@ use tauri::Manager;
 use tokio::sync::mpsc;
 
 fn base_builder() -> tauri::Builder<tauri::Wry> {
-    tauri::Builder::default().plugin(tauri_plugin_store::Builder::new().build())
+    tauri::Builder::default()
+        .plugin(tauri_plugin_log::Builder::new().build())
+        .plugin(tauri_plugin_store::Builder::new().build())
 }
 
 #[cfg(all(debug_assertions, feature = "mcp-bridge"))]
@@ -73,4 +75,51 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod file_logger_packaging {
+    use std::path::PathBuf;
+    use std::process::Command;
+
+    fn manifest_path() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("Cargo.toml")
+    }
+
+    #[test]
+    fn dependency_tree_includes_tauri_plugin_log() {
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
+        let output = Command::new(cargo)
+            .args([
+                "tree",
+                "--locked",
+                "--manifest-path",
+                manifest_path().to_str().expect("utf-8 path"),
+                "--package",
+                "pc-temp",
+            ])
+            .output()
+            .expect("cargo tree");
+
+        assert!(
+            output.status.success(),
+            "cargo tree failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        let tree = String::from_utf8_lossy(&output.stdout);
+        assert!(
+            tree.contains("tauri-plugin-log"),
+            "pc-temp must depend on tauri-plugin-log for on-disk Rust logs:\n{tree}"
+        );
+    }
+
+    #[test]
+    fn manifest_declares_tauri_plugin_log() {
+        let manifest = std::fs::read_to_string(manifest_path()).expect("read Cargo.toml");
+        assert!(
+            manifest.contains("tauri-plugin-log"),
+            "Cargo.toml must declare tauri-plugin-log"
+        );
+    }
 }
