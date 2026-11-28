@@ -98,6 +98,9 @@ describe("Windows installer packaging (#21)", () => {
     expect(hooks).toContain("$SYSDIR\\schtasks.exe");
     expect(hooks).not.toMatch(/ExecWait[^`]*`powershell\.exe /);
     expect(hooks).not.toMatch(/ExecWait[^`]*`schtasks\.exe /);
+    expect(hooks).toMatch(/\$\{If\} \$0 == 56/);
+    expect(hooks).toMatch(/nsExec::ExecToLog/);
+    expect(hooks).toMatch(/WARNING: PawnIO download failed release pin verification/);
   });
 
   it("release workflow is manual dispatch with SHA-pinned actions and bundle asserts", () => {

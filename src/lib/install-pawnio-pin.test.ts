@@ -21,10 +21,7 @@ const PAWNIO_PIN_MISMATCH_EXIT = 56;
 const isWindows = process.platform === "win32";
 
 const windowsPowerShell = "powershell.exe";
-const pwshExe =
-  process.env.PWSH ?? "C:\\Program Files\\PowerShell\\7\\pwsh.exe";
 
-/** Use PS 5.1 module path only; inheriting PS7's PSModulePath breaks Get-FileHash in 5.1. */
 const ps51Modules = join(
   process.env.SystemRoot ?? "C:\\Windows",
   "System32",
@@ -34,24 +31,6 @@ const ps51Modules = join(
 );
 const psEnv = { ...process.env, PSModulePath: ps51Modules };
 
-const importPs51SecurityModule = [
-  "$secMod = Join-Path $env:SystemRoot 'System32\\WindowsPowerShell\\v1.0\\Modules\\Microsoft.PowerShell.Security\\Microsoft.PowerShell.Security.psd1'",
-  "try { Import-Module -Force -Name $secMod -ErrorAction Stop } catch { throw (($_ | Format-List * -Force | Out-String)) }",
-].join("; ");
-
-const isPowerShellHostVar = (key: string) =>
-  key === "PSModulePath" ||
-  key === "PSExecutionPolicyPreference" ||
-  key === "__PSLockdownPolicy" ||
-  key.startsWith("POWERSHELL_");
-
-const stripPowerShellHostEnv = (
-  base: NodeJS.ProcessEnv,
-): NodeJS.ProcessEnv =>
-  Object.fromEntries(
-    Object.entries(base).filter(([key]) => !isPowerShellHostVar(key)),
-  );
-
 describe("PawnIO 2.2.0 pin (#56)", () => {
   it("declares pinned SHA-256 and signer thumbprint constants", () => {
     const ps1 = read("scripts/install-pawnio.ps1");
@@ -59,7 +38,7 @@ describe("PawnIO 2.2.0 pin (#56)", () => {
     expect(ps1).toMatch(/PAWNIO_SIGNER_THUMBPRINT\s*=\s*'/);
     expect(ps1).toContain(OFFICIAL_PAWNIO_220_SHA256);
     expect(ps1).toContain(OFFICIAL_PAWNIO_220_SIGNER_THUMBPRINT);
-    expect(ps1).toMatch(/Get-FileHash[\s\S]*SHA256/);
+    expect(ps1).toMatch(/Security\.Cryptography\.SHA256/);
     expect(ps1).toMatch(/SignerCertificate\.Thumbprint/);
     expect(ps1).toMatch(/function Invoke-PawnIOInstall/);
     expect(ps1).toContain(`$script:PAWNIO_PIN_MISMATCH_EXIT = ${PAWNIO_PIN_MISMATCH_EXIT}`);
@@ -124,30 +103,29 @@ describe.skipIf(!isWindows)(
       }
     });
 
-    const runPowerShell51 = (command: string) =>
+    // NSIS runs Windows PowerShell 5.1; reproduce a PS7-polluted PSModulePath and never fall back to pwsh.
+    const pollutedEnv = {
+      ...process.env,
+      PSModulePath: [
+        join(
+          process.env.ProgramFiles ?? "C:\\Program Files",
+          "PowerShell",
+          "7",
+          "Modules",
+        ),
+        ps51Modules,
+      ].join(";"),
+    };
+
+    const runPowerShell = (command: string) =>
       execSync(
-        `${windowsPowerShell} -NoProfile -Command "${`${importPs51SecurityModule}; ${command}`.replace(/"/g, '\\"')}"`,
+        `${windowsPowerShell} -NoProfile -Command "${command.replace(/"/g, '\\"')}"`,
         {
           encoding: "utf8",
           timeout: 60_000,
-          env: psEnv,
+          env: pollutedEnv,
         },
       );
-
-    const runPowerShell = (command: string) => {
-      try {
-        return runPowerShell51(command);
-      } catch {
-        return execSync(
-          `"${pwshExe}" -NoProfile -Command "${command.replace(/"/g, '\\"')}"`,
-          {
-            encoding: "utf8",
-            timeout: 60_000,
-            env: stripPowerShellHostEnv(process.env),
-          },
-        );
-      }
-    };
 
     it("accepts the official 2.2.0 setup executable", () => {
       const out = runPowerShell(
@@ -208,6 +186,8 @@ describe.skipIf(!isWindows)(
         [
           "$ErrorActionPreference = 'Stop'",
           `. '${scriptEsc}' -NoPrompt`,
+          "$script:PAWNIO_UNINSTALL_REG = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PawnIO_PinTestStub'",
+          "function Get-Service { param($Name, $ErrorAction) return $null }",
           `$script:PAWNIO_SETUP_SHA256 = '0000000000000000000000000000000000000000000000000000000000000000'`,
           "$script:setupRan = $false",
           "$script:cleanedDir = $null",
@@ -227,6 +207,86 @@ describe.skipIf(!isWindows)(
       expect(output).toMatch(/could not install the PawnIO driver automatically/i);
       expect(output).toMatch(/namazso\/PawnIO\.Setup\/releases\/latest/);
       expect(output).toMatch(/release pin verification/i);
+    });
+
+    it("exits with pin failure code when pin verification throws", () => {
+      const scriptEsc = scriptPath.replace(/'/g, "''");
+      const setupEsc = officialSetupPath.replace(/'/g, "''");
+      const cacheEsc = cacheDir.replace(/'/g, "''");
+
+      const output = runPowerShell(
+        [
+          "$ErrorActionPreference = 'Stop'",
+          `. '${scriptEsc}' -NoPrompt`,
+          "$script:PAWNIO_UNINSTALL_REG = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PawnIO_PinTestStub'",
+          "function Get-Service { param($Name, $ErrorAction) return $null }",
+          "$script:setupRan = $false",
+          "function Test-PawnIOInstalled { $false }",
+          `function Get-PawnIOSetupDownloadDir { '${cacheEsc}' }`,
+          `function Get-PawnIOSetupExe { param($DownloadDir) '${setupEsc}' }`,
+          "function Test-PawnIOSetupAuthenticode { param($Path) throw 'boom' }",
+          "function Invoke-PawnIOSetup { param($SetupPath) $script:setupRan = $true; 0 }",
+          "function Remove-PawnIOSetupDownloadDir { param($Dir) }",
+          "$code = Invoke-PawnIOInstall",
+          'Write-Host "EXIT=$code SETUP_RAN=$($script:setupRan)"',
+        ].join("; "),
+      );
+
+      expect(output).toMatch(new RegExp(`EXIT=${PAWNIO_PIN_MISMATCH_EXIT}`));
+      expect(output).toMatch(/SETUP_RAN=False/i);
+    });
+
+    it("shows manual notice when setup succeeds but the driver is not running", () => {
+      const scriptEsc = scriptPath.replace(/'/g, "''");
+      const setupEsc = officialSetupPath.replace(/'/g, "''");
+      const cacheEsc = cacheDir.replace(/'/g, "''");
+
+      const output = runPowerShell(
+        [
+          "$ErrorActionPreference = 'Stop'",
+          `. '${scriptEsc}' -NoPrompt`,
+          "$script:PAWNIO_UNINSTALL_REG = 'HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\PawnIO_PinTestStub'",
+          "function Get-Service { param($Name, $ErrorAction) return $null }",
+          "function Test-PawnIOInstalled { $false }",
+          `function Get-PawnIOSetupDownloadDir { '${cacheEsc}' }`,
+          `function Get-PawnIOSetupExe { param($DownloadDir) '${setupEsc}' }`,
+          "function Invoke-PawnIOSetup { param($SetupPath) 0 }",
+          "function Ensure-PawnIOServiceRunning { $false }",
+          "function Remove-PawnIOSetupDownloadDir { param($Dir) }",
+          "$code = Invoke-PawnIOInstall",
+          'Write-Host "EXIT=$code"',
+        ].join("; "),
+      );
+
+      expect(output).toMatch(/EXIT=0/);
+      expect(output).toMatch(
+        /driver is not running; restart Windows before CPU temperatures are available/i,
+      );
+      expect(output).toMatch(/could not install the PawnIO driver automatically/i);
+    });
+
+    const runWithServiceStub = (status: string, startThrows: boolean) =>
+      runPowerShell(
+        [
+          `. '${scriptPath.replace(/'/g, "''")}' -NoPrompt`,
+          "$script:started = $false",
+          `function Get-Service { param($Name, $ErrorAction) $o = [pscustomobject]@{ Status = '${status}' }; $o | Add-Member -MemberType ScriptMethod -Name WaitForStatus -Value { param($s, $t) throw 'timed out' }; $o }`,
+          `function Start-Service { param($Name, $ErrorAction) $script:started = $true; ${startThrows ? "throw 'cannot start'" : ""} }`,
+          "$r = Test-PawnIOInstalled",
+          'Write-Host "INSTALLED=$r STARTED=$($script:started)"',
+        ].join("; "),
+      );
+
+    it("treats a registered but stopped PawnIO service that cannot start as not installed", () => {
+      const out = runWithServiceStub("Stopped", true);
+      expect(out).toMatch(/INSTALLED=False STARTED=True/);
+      expect(out).toMatch(/could not be started/);
+      expect(out).toMatch(/registered but not running; retrying setup/);
+    });
+
+    it("skips setup without starting anything when PawnIO is already running", () => {
+      const out = runWithServiceStub("Running", false);
+      expect(out).toMatch(/INSTALLED=True STARTED=False/);
     });
   },
 );

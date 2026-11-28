@@ -1,6 +1,6 @@
 ﻿# Downloads and silently installs the official PawnIO driver when missing (issue #21).
 # PawnIO is never bundled; generic failures surface the manual link and exit 0 so PC-Temp still installs.
-# Pin mismatch exits non-zero so NSIS does not treat PawnIO as OK (#56).
+# Pin mismatch exits 56; NSIS logs a warning (#56).
 # Official PawnIO.Setup 2.2.0 CLI (verified): PawnIO_setup.exe -install -silent (exit 0 = ok, 3010 = reboot pending).
 param(
     [switch]$Quiet,
@@ -90,7 +90,17 @@ function Test-PawnIOSetupAuthenticode {
         return $false
     }
 
-    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $sha256 = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $hash = ([System.BitConverter]::ToString($sha256.ComputeHash($stream)) -replace '-', '').ToUpperInvariant()
+        } finally {
+            $sha256.Dispose()
+        }
+    } finally {
+        $stream.Dispose()
+    }
     $expectedHash = $script:PAWNIO_SETUP_SHA256.ToUpperInvariant()
     if ($hash -ne $expectedHash) {
         Write-InstallDetail "PawnIO setup SHA-256 mismatch: expected $expectedHash, actual $hash."
@@ -190,11 +200,26 @@ function Invoke-PawnIOInstall {
         return 0
     }
 
+    if ((Test-Path -LiteralPath $script:PAWNIO_UNINSTALL_REG) -or (
+            $null -ne (Get-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction SilentlyContinue))) {
+        Write-InstallDetail 'PawnIO is registered but the driver is not running; restart Windows before CPU temperatures are available.'
+        Show-PawnIOManualInstallNotice
+        return 0
+    }
+
     $pawnioSetupDownloadDir = $null
+    $pinFailed = $false
     try {
         $pawnioSetupDownloadDir = Get-PawnIOSetupDownloadDir
         $setup = Get-PawnIOSetupExe -DownloadDir $pawnioSetupDownloadDir
-        if (-not (Test-PawnIOSetupAuthenticode -Path $setup)) {
+        $pinOk = $false
+        try {
+            $pinOk = Test-PawnIOSetupAuthenticode -Path $setup
+        } catch {
+            Write-InstallDetail "PawnIO setup pin verification error: $($_.Exception.Message)"
+        }
+        if (-not $pinOk) {
+            $pinFailed = $true
             throw 'PawnIO setup failed release pin verification (expected PawnIO 2.2.0 hash and signer).'
         }
 
@@ -204,7 +229,8 @@ function Invoke-PawnIOInstall {
                 if (Ensure-PawnIOServiceRunning) {
                     Write-InstallDetail 'PawnIO installed successfully and the service is running.'
                 } else {
-                    Write-InstallDetail 'PawnIO installed successfully but the service is not running yet.'
+                    Write-InstallDetail 'PawnIO installed but the driver is not running; restart Windows before CPU temperatures are available.'
+                    Show-PawnIOManualInstallNotice
                 }
                 return 0
             }
@@ -213,14 +239,16 @@ function Invoke-PawnIOInstall {
                 return 0
             }
             default {
-                throw "PawnIO setup exited with code $exitCode."
+                Write-InstallDetail "PawnIO setup exited with code $exitCode; restart Windows or install PawnIO manually."
+                Show-PawnIOManualInstallNotice
+                return 0
             }
         }
     } catch {
         $msg = $_.Exception.Message
         Write-InstallDetail "PawnIO install step failed: $msg"
         Show-PawnIOManualInstallNotice
-        if ($msg -match 'release pin verification') {
+        if ($pinFailed) {
             return $script:PAWNIO_PIN_MISMATCH_EXIT
         }
         return 0
