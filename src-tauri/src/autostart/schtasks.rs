@@ -1,28 +1,117 @@
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 pub const TASK_NAME: &str = "PC-Temp";
 
-/// `/TR` value for schtasks: quoted executable path (`"C:\path with spaces\app.exe"`).
-pub fn task_run_tr(exe: &Path) -> String {
-    format!("\"{}\"", exe.display())
-}
-
-pub fn create_args(exe: &Path, run_as_user: &str) -> Vec<String> {
+pub fn create_xml_args(xml_path: &Path) -> Vec<String> {
     vec![
         "/Create".into(),
-        "/SC".into(),
-        "ONLOGON".into(),
         "/TN".into(),
         TASK_NAME.into(),
-        "/TR".into(),
-        task_run_tr(exe),
-        "/RL".into(),
-        "HIGHEST".into(),
-        "/IT".into(),
-        "/RU".into(),
-        run_as_user.into(),
+        "/XML".into(),
+        xml_path.display().to_string(),
         "/F".into(),
     ]
+}
+
+fn xml_escape(raw: &str) -> String {
+    raw.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
+}
+
+/// Task Scheduler XML for a logon trigger with battery/time-limit settings (OQ-21).
+pub fn logon_task_xml(exe: &Path, run_as_user: &str) -> String {
+    let command = xml_escape(&exe.display().to_string());
+    let user = xml_escape(run_as_user);
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <Triggers>
+    <LogonTrigger>
+      <Enabled>true</Enabled>
+      <UserId>{user}</UserId>
+    </LogonTrigger>
+  </Triggers>
+  <Principals>
+    <Principal id="Author">
+      <UserId>{user}</UserId>
+      <LogonType>InteractiveToken</LogonType>
+      <RunLevel>HighestAvailable</RunLevel>
+    </Principal>
+  </Principals>
+  <Settings>
+    <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
+    <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
+    <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
+    <AllowHardTerminate>true</AllowHardTerminate>
+    <StartWhenAvailable>false</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <IdleSettings>
+      <StopOnIdleEnd>true</StopOnIdleEnd>
+      <RestartOnIdle>false</RestartOnIdle>
+    </IdleSettings>
+    <AllowStartOnDemand>true</AllowStartOnDemand>
+    <Enabled>true</Enabled>
+    <Hidden>false</Hidden>
+    <RunOnlyIfIdle>false</RunOnlyIfIdle>
+    <WakeToRun>false</WakeToRun>
+    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <Priority>7</Priority>
+  </Settings>
+  <Actions Context="Author">
+    <Exec>
+      <Command>{command}</Command>
+    </Exec>
+  </Actions>
+</Task>
+"#
+    )
+}
+
+#[cfg(windows)]
+fn write_utf16_xml(path: &Path, content: &str) -> Result<std::fs::File, String> {
+    use std::fs::OpenOptions;
+    use std::io::Write;
+    use std::os::windows::fs::OpenOptionsExt;
+
+    const FILE_SHARE_READ: u32 = 0x0000_0001;
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+    let mut bytes = Vec::with_capacity(2 + content.len() * 2);
+    bytes.extend_from_slice(&[0xFF, 0xFE]);
+    for unit in content.encode_utf16() {
+        bytes.extend_from_slice(&unit.to_le_bytes());
+    }
+
+    {
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .share_mode(0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(path)
+            .map_err(|e| format!("failed to create task XML: {e}"))?;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|e| format!("failed to write task XML: {e}"))?;
+    }
+
+    let mut lock = OpenOptions::new()
+        .read(true)
+        .share_mode(FILE_SHARE_READ)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)
+        .map_err(|e| format!("failed to lock task XML: {e}"))?;
+    let mut on_disk = Vec::with_capacity(bytes.len());
+    lock.read_to_end(&mut on_disk)
+        .map_err(|e| format!("failed to verify task XML: {e}"))?;
+    if on_disk != bytes {
+        return Err("task XML was modified before registration".into());
+    }
+    Ok(lock)
 }
 
 pub fn delete_args() -> Vec<String> {
@@ -102,12 +191,26 @@ fn schtasks_failure(verb: &str, output: &std::process::Output) -> String {
 #[cfg(windows)]
 pub fn create_logon_task(exe: PathBuf) -> Result<(), String> {
     let run_as = interactive_run_as()?;
-    let args = create_args(&exe, &run_as);
-    let output = run_schtasks(&args)?;
-    if output.status.success() {
-        return Ok(());
-    }
-    Err(schtasks_failure("create", &output))
+    let xml = logon_task_xml(&exe, &run_as);
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or_default();
+    let xml_path = std::env::temp_dir().join(format!(
+        "{TASK_NAME}-{}-{nonce}.xml",
+        std::process::id()
+    ));
+    let result = (|| {
+        let _lock = write_utf16_xml(&xml_path, &xml)?;
+        let output = run_schtasks(&create_xml_args(&xml_path))?;
+        if output.status.success() {
+            Ok(())
+        } else {
+            Err(schtasks_failure("create", &output))
+        }
+    })();
+    let _ = std::fs::remove_file(&xml_path);
+    result
 }
 
 #[cfg(windows)]
@@ -126,41 +229,69 @@ mod tests {
     use std::path::Path;
 
     #[test]
-    fn task_run_tr_quotes_paths_with_spaces() {
-        let exe = Path::new(r"C:\Program Files\PC-Temp\pc-temp.exe");
+    fn create_xml_args_match_spec() {
+        let xml_path = Path::new(r"C:\Temp\pc-temp-task.xml");
         assert_eq!(
-            task_run_tr(exe),
-            r#""C:\Program Files\PC-Temp\pc-temp.exe""#
+            create_xml_args(xml_path),
+            vec![
+                "/Create",
+                "/TN",
+                "PC-Temp",
+                "/XML",
+                r"C:\Temp\pc-temp-task.xml",
+                "/F",
+            ]
         );
     }
 
     #[test]
-    fn task_run_tr_quotes_simple_path() {
-        let exe = Path::new(r"C:\pc-temp.exe");
-        assert_eq!(task_run_tr(exe), r#""C:\pc-temp.exe""#);
+    fn logon_task_xml_allows_battery_and_no_time_limit() {
+        let exe = Path::new(r"C:\Program Files\PC-Temp\pc-temp.exe");
+        let xml = logon_task_xml(exe, r"WORKGROUP\nik");
+        assert!(
+            xml.contains("<DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>"),
+            "task must start on battery power"
+        );
+        assert!(
+            xml.contains("<StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>"),
+            "task must not stop on battery"
+        );
+        assert!(
+            xml.contains("<ExecutionTimeLimit>PT0S</ExecutionTimeLimit>"),
+            "task must have no execution time limit"
+        );
     }
 
     #[test]
-    fn create_args_match_spec() {
+    fn logon_task_xml_includes_logon_trigger_and_privileges() {
+        let exe = Path::new(r"C:\pc-temp.exe");
+        let xml = logon_task_xml(exe, r"WORKGROUP\nik");
+        assert!(xml.contains("<LogonTrigger>"));
+        assert!(xml.contains("<UserId>WORKGROUP\\nik</UserId>"));
+        assert!(xml.contains("<LogonType>InteractiveToken</LogonType>"));
+        assert!(xml.contains("<RunLevel>HighestAvailable</RunLevel>"));
+    }
+
+    #[test]
+    fn logon_task_xml_command_uses_exe_path_and_escapes_xml() {
         let exe = Path::new(r"C:\Program Files\PC-Temp\pc-temp.exe");
-        let args = create_args(exe, r"WORKGROUP\nik");
-        assert_eq!(
-            args,
-            vec![
-                "/Create",
-                "/SC",
-                "ONLOGON",
-                "/TN",
-                "PC-Temp",
-                "/TR",
-                r#""C:\Program Files\PC-Temp\pc-temp.exe""#,
-                "/RL",
-                "HIGHEST",
-                "/IT",
-                "/RU",
-                r"WORKGROUP\nik",
-                "/F",
-            ]
+        let xml = logon_task_xml(exe, r"WORKGROUP\nik");
+        assert!(
+            xml.contains(r"<Command>C:\Program Files\PC-Temp\pc-temp.exe</Command>"),
+            "XML action command must reference the install exe path"
+        );
+
+        let amp = logon_task_xml(
+            Path::new(r"C:\Tools & Apps\<pc>\pc-temp.exe"),
+            r"R&D\o'neil",
+        );
+        assert!(amp.contains(
+            r"<Command>C:\Tools &amp; Apps\&lt;pc&gt;\pc-temp.exe</Command>"
+        ));
+        assert!(amp.contains(r"<UserId>R&amp;D\o&apos;neil</UserId>"));
+        assert!(
+            !amp.contains("Tools & Apps"),
+            "raw & must never reach the XML"
         );
     }
 
@@ -206,5 +337,63 @@ mod tests {
             exe.components().count() >= 3,
             "must not launch schtasks by bare name: {path}"
         );
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn write_utf16_xml_refuses_existing_path() {
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "PC-Temp-test-{}-{}.xml",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_file(&path);
+        let xml = logon_task_xml(Path::new(r"C:\pc-temp.exe"), r"WORKGROUP\nik");
+        write_utf16_xml(&path, &xml).expect("first create");
+        let err = write_utf16_xml(&path, &xml).expect_err("must refuse existing path");
+        assert!(
+            err.contains("failed to create task XML"),
+            "unexpected error: {err}"
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn write_utf16_xml_allows_shared_read_while_locked() {
+        use std::fs::OpenOptions;
+        use std::os::windows::fs::OpenOptionsExt;
+
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+        let dir = std::env::temp_dir();
+        let path = dir.join(format!(
+            "PC-Temp-share-{}-{}.xml",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_file(&path);
+        let xml = logon_task_xml(Path::new(r"C:\pc-temp.exe"), r"WORKGROUP\nik");
+        let _lock = write_utf16_xml(&path, &xml).expect("write");
+        let mut reader = OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+            .open(&path)
+            .expect("shared read open while lock held");
+        let mut buf = Vec::new();
+        reader
+            .read_to_end(&mut buf)
+            .expect("read XML while lock held");
+        assert!(buf.starts_with(&[0xFF, 0xFE]));
+        let _ = std::fs::remove_file(&path);
     }
 }
