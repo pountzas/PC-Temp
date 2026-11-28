@@ -106,15 +106,31 @@ fn finalize_loaded_settings(
     autostart_registered: impl FnOnce() -> bool,
 ) -> Settings {
     loaded = sanitize_for_startup(loaded);
-    // Reflect Task Scheduler state; never create a task here (issue #58).
+    // Reflect Task Scheduler state; never opt in here (issue #58).
     loaded.start_with_windows = autostart_registered();
     loaded
+}
+
+/// Re-register an existing logon task so upgrades pick up new task XML (#64).
+fn upgrade_autostart_task_if_registered(
+    registered: bool,
+    set_enabled: impl FnOnce(bool) -> Result<(), String>,
+) {
+    if registered {
+        if let Err(e) = set_enabled(true) {
+            log::warn!("upgrade autostart task XML: {e}");
+        }
+    }
 }
 
 pub fn init(app: &AppHandle) {
     let _ = APP.set(app.clone());
     let (loaded, first_run) = load_from_store(app);
     let loaded = finalize_loaded_settings(loaded, crate::autostart::is_enabled);
+    upgrade_autostart_task_if_registered(
+        loaded.start_with_windows,
+        crate::autostart::set_enabled,
+    );
 
     {
         let mut guard = memory().write().unwrap_or_else(|e| e.into_inner());
@@ -260,6 +276,36 @@ mod tests {
         stored.start_with_windows = false;
         let prepared = finalize_loaded_settings(stored, || true);
         assert!(prepared.start_with_windows);
+    }
+
+    #[test]
+    fn upgrade_autostart_task_if_registered_recreates_when_task_exists() {
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = called.clone();
+        upgrade_autostart_task_if_registered(true, |enabled| {
+            assert!(enabled);
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        });
+        assert!(called.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn upgrade_autostart_task_if_registered_skips_when_task_absent() {
+        let called = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let flag = called.clone();
+        upgrade_autostart_task_if_registered(false, |_| {
+            flag.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(())
+        });
+        assert!(!called.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn upgrade_autostart_task_if_registered_logs_failure_without_panic() {
+        upgrade_autostart_task_if_registered(true, |_| {
+            Err("schtasks unavailable".to_string())
+        });
     }
 
     #[test]

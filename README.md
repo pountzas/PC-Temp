@@ -56,6 +56,30 @@ Run `pnpm check` before pushing.
 
 Integration branch: **`dev`**. Sub-PRs target `dev`, not `main`.
 
+## Verify release provenance
+
+Official Windows installers are built manually via the [**release** workflow](.github/workflows/release.yml) (`workflow_dispatch`). Each run uploads the NSIS `.exe` plus a sidecar `*.exe.sha256` (lowercase hex, no filename line).
+
+1. Download the `pc-temp-windows-installer` artifact from the release workflow run (GitHub sign-in required) and extract the zip; it contains the installer `.exe` and its `.exe.sha256`.
+2. **Checksum:** compare the installer hash locally with the `.sha256` file. On Windows PowerShell:
+
+   ```powershell
+   $installer = Get-Item .\path\to\PC-Temp_*_x64-setup.exe
+   $expected = (Get-Content "$($installer.FullName).sha256" -Raw).Trim().ToLower()
+   $actual = (Get-FileHash -Algorithm SHA256 -Path $installer.FullName).Hash.ToLower()
+   if ($actual -ne $expected) { throw "SHA-256 mismatch" }
+   ```
+
+   On Linux or macOS: `shasum -a 256 path/to/installer.exe` should match the contents of the sidecar file.
+
+3. **Build provenance:** with [GitHub CLI](https://cli.github.com/) authenticated, verify the installer was built by this repository’s release workflow:
+
+   ```bash
+   gh attestation verify path/to/PC-Temp_*_x64-setup.exe -R pountzas/PC-Temp
+   ```
+
+   Successful verification confirms a Sigstore-backed attestation for that file’s digest tied to the workflow run. Installers are **not** Authenticode-signed yet; see [docs/signing-plan.md](docs/signing-plan.md) for the planned approach.
+
 ## Designs
 
 - [PC-Temp widget](https://app.paper.design/file/01M7RQV969C1C8VB6JQ71K2MAV) — compact, expanded, mini pill, hot state, settings, and unfocused layouts.
