@@ -1,7 +1,6 @@
 ; PC-Temp NSIS installer hooks (#21): optional PawnIO download at install; remove PC-Temp schtask on uninstall.
 
 !include LogicLib.nsh
-!include nsExec.nsh
 
 !define HOOK_FILE_DIR "${__FILEDIR__}"
 

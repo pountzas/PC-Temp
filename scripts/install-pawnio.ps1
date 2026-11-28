@@ -70,7 +70,7 @@ function Test-PawnIOInstalled {
         return $true
     }
 
-    Write-InstallDetail 'PawnIO is registered but not running; retrying setup.'
+    Write-InstallDetail 'PawnIO is registered but not running; skipping automatic setup.'
     return $false
 }
 
@@ -258,6 +258,31 @@ function Invoke-PawnIOSetup {
     return $proc.ExitCode
 }
 
+function Show-PawnIORestartNotice {
+    $text = @"
+PawnIO is installed but the kernel driver is not running.
+Restart Windows before CPU temperature readings are available.
+
+If temperatures are still unavailable after a restart, download the official PawnIO setup here:
+$($script:PAWNIO_MANUAL_URL)
+"@
+    Write-InstallDetail $text
+    if ($NoPrompt) {
+        return
+    }
+    try {
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+        [System.Windows.Forms.MessageBox]::Show(
+            $text,
+            'PC-Temp — restart required for PawnIO',
+            [System.Windows.Forms.MessageBoxButtons]::OK,
+            [System.Windows.Forms.MessageBoxIcon]::Information
+        ) | Out-Null
+    } catch {
+        # Headless / restricted hosts: message already logged.
+    }
+}
+
 function Show-PawnIOManualInstallNotice {
     $text = @"
 PC-Temp could not install the PawnIO driver automatically.
@@ -292,7 +317,7 @@ function Invoke-PawnIOInstall {
     if ((Test-Path -LiteralPath $script:PAWNIO_UNINSTALL_REG) -or (
             $null -ne (Get-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction SilentlyContinue))) {
         Write-InstallDetail 'PawnIO is registered but the driver is not running; restart Windows before CPU temperatures are available.'
-        Show-PawnIOManualInstallNotice
+        Show-PawnIORestartNotice
         return 0
     }
 

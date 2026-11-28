@@ -283,7 +283,7 @@ describe.skipIf(!isWindows)(
       const out = runWithServiceStub("Stopped", true);
       expect(out).toMatch(/INSTALLED=False STARTED=True/);
       expect(out).toMatch(/could not be started/);
-      expect(out).toMatch(/registered but not running; retrying setup/);
+      expect(out).toMatch(/registered but not running; skipping automatic setup/);
     });
 
     it("skips setup without starting anything when PawnIO is already running", () => {
