@@ -1,5 +1,6 @@
 ﻿# Downloads and silently installs the official PawnIO driver when missing (issue #21).
-# PawnIO is never bundled; on failure we surface the manual link and exit 0 so PC-Temp still installs.
+# PawnIO is never bundled; generic failures surface the manual link and exit 0 so PC-Temp still installs.
+# Pin mismatch exits non-zero so NSIS does not treat PawnIO as OK (#56).
 # Official PawnIO.Setup 2.2.0 CLI (verified): PawnIO_setup.exe -install -silent (exit 0 = ok, 3010 = reboot pending).
 param(
     [switch]$Quiet,
@@ -14,8 +15,12 @@ $script:PAWNIO_SETUP_URL = "https://github.com/namazso/PawnIO.Setup/releases/dow
 $script:PAWNIO_MANUAL_URL = 'https://github.com/namazso/PawnIO.Setup/releases/latest'
 $script:PAWNIO_SETUP_ARGS = @('-install', '-silent')
 $script:PAWNIO_REBOOT_EXIT_CODE = 3010
+$script:PAWNIO_PIN_MISMATCH_EXIT = 56
 $script:PAWNIO_UNINSTALL_REG = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
 $script:PAWNIO_SERVICE_NAME = 'PawnIO'
+# PawnIO_setup.exe 2.2.0 release asset (SHA-256 and Authenticode signer thumbprint).
+$script:PAWNIO_SETUP_SHA256 = '1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032'
+$script:PAWNIO_SIGNER_THUMBPRINT = 'F380DCC9F706E2756A5047B832FFE719E1BC35F5'
 
 function Write-InstallDetail {
     param([string]$Message)
@@ -24,12 +29,49 @@ function Write-InstallDetail {
     }
 }
 
-function Test-PawnIOInstalled {
-    if (Test-Path -LiteralPath $script:PAWNIO_UNINSTALL_REG) {
+function Ensure-PawnIOServiceRunning {
+    $svc = Get-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction SilentlyContinue
+    if ($null -eq $svc) {
+        Write-InstallDetail 'PawnIO service is not registered.'
+        return $false
+    }
+
+    if ($svc.Status -eq 'Running') {
         return $true
     }
+
+    try {
+        Write-InstallDetail "Starting PawnIO service (was $($svc.Status))..."
+        Start-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction Stop
+        $svc.WaitForStatus('Running', (New-TimeSpan -Seconds 30))
+    } catch {
+        Write-InstallDetail "PawnIO service could not be started: $($_.Exception.Message)"
+        return $false
+    }
+
+    return $svc.Status -eq 'Running'
+}
+
+function Test-PawnIOInstalled {
+    $registered = $false
+    if (Test-Path -LiteralPath $script:PAWNIO_UNINSTALL_REG) {
+        $registered = $true
+    }
     $svc = Get-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction SilentlyContinue
-    return $null -ne $svc
+    if ($null -ne $svc) {
+        $registered = $true
+    }
+
+    if (-not $registered) {
+        return $false
+    }
+
+    if (Ensure-PawnIOServiceRunning) {
+        return $true
+    }
+
+    Write-InstallDetail 'PawnIO is registered but not running; retrying setup.'
+    return $false
 }
 
 function Test-PawnIOSetupAuthenticode {
@@ -37,10 +79,25 @@ function Test-PawnIOSetupAuthenticode {
 
     $sig = Get-AuthenticodeSignature -FilePath $Path
     if ($sig.Status -ne 'Valid') {
+        Write-InstallDetail "PawnIO setup Authenticode status is $($sig.Status) (expected Valid)."
         return $false
     }
-    $subject = $sig.SignerCertificate.Subject
-    return $subject -match 'namazso'
+
+    $actualThumbprint = $sig.SignerCertificate.Thumbprint.ToUpperInvariant()
+    $expectedThumbprint = $script:PAWNIO_SIGNER_THUMBPRINT.ToUpperInvariant()
+    if ($actualThumbprint -ne $expectedThumbprint) {
+        Write-InstallDetail "PawnIO setup signer thumbprint mismatch: expected $expectedThumbprint, actual $actualThumbprint."
+        return $false
+    }
+
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash.ToUpperInvariant()
+    $expectedHash = $script:PAWNIO_SETUP_SHA256.ToUpperInvariant()
+    if ($hash -ne $expectedHash) {
+        Write-InstallDetail "PawnIO setup SHA-256 mismatch: expected $expectedHash, actual $hash."
+        return $false
+    }
+
+    return $true
 }
 
 function Get-PawnIOSetupDownloadDir {
@@ -127,39 +184,53 @@ $($script:PAWNIO_MANUAL_URL)
     }
 }
 
-if (Test-PawnIOInstalled) {
-    Write-InstallDetail 'PawnIO is already installed; skipping.'
-    exit 0
+function Invoke-PawnIOInstall {
+    if (Test-PawnIOInstalled) {
+        Write-InstallDetail 'PawnIO is already installed and running; skipping.'
+        return 0
+    }
+
+    $pawnioSetupDownloadDir = $null
+    try {
+        $pawnioSetupDownloadDir = Get-PawnIOSetupDownloadDir
+        $setup = Get-PawnIOSetupExe -DownloadDir $pawnioSetupDownloadDir
+        if (-not (Test-PawnIOSetupAuthenticode -Path $setup)) {
+            throw 'PawnIO setup failed release pin verification (expected PawnIO 2.2.0 hash and signer).'
+        }
+
+        $exitCode = Invoke-PawnIOSetup -SetupPath $setup
+        switch ($exitCode) {
+            0 {
+                if (Ensure-PawnIOServiceRunning) {
+                    Write-InstallDetail 'PawnIO installed successfully and the service is running.'
+                } else {
+                    Write-InstallDetail 'PawnIO installed successfully but the service is not running yet.'
+                }
+                return 0
+            }
+            $script:PAWNIO_REBOOT_EXIT_CODE {
+                Write-InstallDetail 'PawnIO installed; a reboot is required before CPU temperatures are available.'
+                return 0
+            }
+            default {
+                throw "PawnIO setup exited with code $exitCode."
+            }
+        }
+    } catch {
+        $msg = $_.Exception.Message
+        Write-InstallDetail "PawnIO install step failed: $msg"
+        Show-PawnIOManualInstallNotice
+        if ($msg -match 'release pin verification') {
+            return $script:PAWNIO_PIN_MISMATCH_EXIT
+        }
+        return 0
+    } finally {
+        if ($pawnioSetupDownloadDir) {
+            Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
+        }
+    }
 }
 
-$pawnioSetupDownloadDir = $null
-try {
-    $pawnioSetupDownloadDir = Get-PawnIOSetupDownloadDir
-    $setup = Get-PawnIOSetupExe -DownloadDir $pawnioSetupDownloadDir
-    if (-not (Test-PawnIOSetupAuthenticode -Path $setup)) {
-        throw 'PawnIO setup failed Authenticode verification (expected valid namazso signature).'
-    }
-
-    $exitCode = Invoke-PawnIOSetup -SetupPath $setup
-    switch ($exitCode) {
-        0 {
-            Write-InstallDetail 'PawnIO installed successfully.'
-            exit 0
-        }
-        $script:PAWNIO_REBOOT_EXIT_CODE {
-            Write-InstallDetail 'PawnIO installed; a reboot is required before CPU temperatures are available.'
-            exit 0
-        }
-        default {
-            throw "PawnIO setup exited with code $exitCode."
-        }
-    }
-} catch {
-    Write-InstallDetail "PawnIO install step failed: $($_.Exception.Message)"
-    Show-PawnIOManualInstallNotice
-    exit 0
-} finally {
-    if ($pawnioSetupDownloadDir) {
-        Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
-    }
+if ($MyInvocation.InvocationName -ne '.') {
+    exit (Invoke-PawnIOInstall)
 }

@@ -55,6 +55,8 @@ describe("Windows installer packaging (#21)", () => {
     expect(ps1).toMatch(/-install/);
     expect(ps1).toMatch(/-silent/);
     expect(ps1).toMatch(/Get-AuthenticodeSignature/);
+    expect(ps1).toContain("PAWNIO_SETUP_SHA256");
+    expect(ps1).toMatch(/function Invoke-PawnIOInstall/);
     expect(ps1).toMatch(/3010/);
     expect(ps1).toMatch(/ProgressPreference\s*=\s*'SilentlyContinue'/);
     expect(ps1).toMatch(/TimeoutSec\s+120/);
