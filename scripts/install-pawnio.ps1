@@ -18,6 +18,7 @@ $script:PAWNIO_REBOOT_EXIT_CODE = 3010
 $script:PAWNIO_PIN_MISMATCH_EXIT = 56
 $script:PAWNIO_UNINSTALL_REG = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
 $script:PAWNIO_SERVICE_NAME = 'PawnIO'
+$script:PAWNIO_SERVICE_ENUM_REG = 'HKLM:\SYSTEM\CurrentControlSet\Services\PawnIO\Enum'
 # PawnIO_setup.exe 2.2.0 release asset (SHA-256 and Authenticode signer thumbprint).
 $script:PAWNIO_SETUP_SHA256 = '1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032'
 $script:PAWNIO_SIGNER_THUMBPRINT = 'F380DCC9F706E2756A5047B832FFE719E1BC35F5'
@@ -52,17 +53,22 @@ function Ensure-PawnIOServiceRunning {
     return $svc.Status -eq 'Running'
 }
 
-function Test-PawnIOInstalled {
-    $registered = $false
-    if (Test-Path -LiteralPath $script:PAWNIO_UNINSTALL_REG) {
-        $registered = $true
-    }
-    $svc = Get-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction SilentlyContinue
-    if ($null -ne $svc) {
-        $registered = $true
+function Test-PawnIODevicePresent {
+    if (Test-Path -LiteralPath $script:PAWNIO_SERVICE_ENUM_REG) {
+        $enumProps = Get-ItemProperty -LiteralPath $script:PAWNIO_SERVICE_ENUM_REG -ErrorAction SilentlyContinue
+        if ($null -ne $enumProps -and $null -ne $enumProps.Count -and [int]$enumProps.Count -ge 1) {
+            return $true
+        }
     }
 
-    if (-not $registered) {
+    $pnpDevices = @(Get-PnpDevice -ErrorAction SilentlyContinue | Where-Object {
+            $_.FriendlyName -like '*PawnIO*' -or $_.InstanceId -like '*PawnIO*'
+        })
+    return $pnpDevices.Count -ge 1
+}
+
+function Test-PawnIOInstalled {
+    if (-not (Test-PawnIODevicePresent)) {
         return $false
     }
 
@@ -70,7 +76,7 @@ function Test-PawnIOInstalled {
         return $true
     }
 
-    Write-InstallDetail 'PawnIO is registered but not running; skipping automatic setup.'
+    Write-InstallDetail 'PawnIO device is present but the service is not running; skipping automatic setup.'
     return $false
 }
 
@@ -314,8 +320,9 @@ function Invoke-PawnIOInstall {
         return 0
     }
 
-    if ((Test-Path -LiteralPath $script:PAWNIO_UNINSTALL_REG) -or (
-            $null -ne (Get-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction SilentlyContinue))) {
+    $svc = Get-Service -Name $script:PAWNIO_SERVICE_NAME -ErrorAction SilentlyContinue
+    $registered = (Test-Path -LiteralPath $script:PAWNIO_UNINSTALL_REG) -or ($null -ne $svc)
+    if ($registered -and (Test-PawnIODevicePresent)) {
         Write-InstallDetail 'PawnIO is registered but the driver is not running; restart Windows before CPU temperatures are available.'
         Show-PawnIORestartNotice
         return 0

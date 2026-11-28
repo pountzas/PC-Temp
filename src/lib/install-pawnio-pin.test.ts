@@ -46,6 +46,8 @@ describe("PawnIO 2.2.0 pin (#56)", () => {
     expect(ps1).toContain(`$script:PAWNIO_PIN_MISMATCH_EXIT = ${PAWNIO_PIN_MISMATCH_EXIT}`);
     expect(ps1).toMatch(/Start-Service/);
     expect(ps1).toMatch(/function Ensure-PawnIOServiceRunning/);
+    expect(ps1).toMatch(/function Test-PawnIODevicePresent/);
+    expect(ps1).toMatch(/Services\\PawnIO\\Enum/);
   });
 });
 
@@ -267,11 +269,17 @@ describe.skipIf(!isWindows)(
       expect(output).toMatch(/could not install the PawnIO driver automatically/i);
     });
 
-    const runWithServiceStub = (status: string, startThrows: boolean) =>
+    const runWithServiceStub = (
+      status: string,
+      startThrows: boolean,
+      devicePresent: boolean,
+    ) =>
       runPowerShell(
         [
           `. '${scriptPath.replace(/'/g, "''")}' -NoPrompt`,
           "$script:started = $false",
+          `function Test-PawnIODevicePresent { ${devicePresent ? "$true" : "$false"} }`,
+          "function Test-Path { param($LiteralPath) if ($LiteralPath -eq $script:PAWNIO_UNINSTALL_REG) { $true } else { $false } }",
           `function Get-Service { param($Name, $ErrorAction) $o = [pscustomobject]@{ Status = '${status}' }; $o | Add-Member -MemberType ScriptMethod -Name WaitForStatus -Value { param($s, $t) throw 'timed out' }; $o }`,
           `function Start-Service { param($Name, $ErrorAction) $script:started = $true; ${startThrows ? "throw 'cannot start'" : ""} }`,
           "$r = Test-PawnIOInstalled",
@@ -279,16 +287,92 @@ describe.skipIf(!isWindows)(
         ].join("; "),
       );
 
-    it("treats a registered but stopped PawnIO service that cannot start as not installed", () => {
-      const out = runWithServiceStub("Stopped", true);
+    it("treats a registered but stopped PawnIO service that cannot start as not installed when the device is present", () => {
+      const out = runWithServiceStub("Stopped", true, true);
       expect(out).toMatch(/INSTALLED=False STARTED=True/);
       expect(out).toMatch(/could not be started/);
-      expect(out).toMatch(/registered but not running; skipping automatic setup/);
+      expect(out).toMatch(/device is present but the service is not running; skipping automatic setup/);
     });
 
-    it("skips setup without starting anything when PawnIO is already running", () => {
-      const out = runWithServiceStub("Running", false);
+    it("skips setup without starting anything when PawnIO device is present and the service is already running", () => {
+      const out = runWithServiceStub("Running", false, true);
       expect(out).toMatch(/INSTALLED=True STARTED=False/);
+    });
+
+    it("runs setup when the PawnIO service is running but no device is present (orphan service after uninstall)", () => {
+      const scriptEsc = scriptPath.replace(/'/g, "''");
+      const setupEsc = officialSetupPath.replace(/'/g, "''");
+      const cacheEsc = cacheDir.replace(/'/g, "''");
+
+      const output = runPowerShell(
+        [
+          "$ErrorActionPreference = 'Stop'",
+          `. '${scriptEsc}' -NoPrompt`,
+          "function Test-PawnIODevicePresent { $false }",
+          "function Get-Service { param($Name, $ErrorAction) [pscustomobject]@{ Status = 'Running' } }",
+          "function Test-Path { param($LiteralPath) $false }",
+          "$script:setupRan = $false",
+          `function Get-PawnIOSetupDownloadDir { '${cacheEsc}' }`,
+          `function Get-PawnIOSetupExe { param($DownloadDir) '${setupEsc}' }`,
+          "function Invoke-PawnIOSetup { param($SetupPath) $script:setupRan = $true; 0 }",
+          "function Ensure-PawnIOServiceRunning { $true }",
+          "function Remove-PawnIOSetupDownloadDir { param($Dir) }",
+          "$code = Invoke-PawnIOInstall",
+          'Write-Host "EXIT=$code SETUP_RAN=$($script:setupRan)"',
+        ].join("; "),
+      );
+
+      expect(output).toMatch(/EXIT=0/);
+      expect(output).toMatch(/SETUP_RAN=True/i);
+    });
+
+    it("skips install when the service is running and the PawnIO device enum reports Count >= 1", () => {
+      const scriptEsc = scriptPath.replace(/'/g, "''");
+
+      const output = runPowerShell(
+        [
+          "$ErrorActionPreference = 'Stop'",
+          `. '${scriptEsc}' -NoPrompt`,
+          "function Test-PawnIODevicePresent { $true }",
+          "function Get-Service { param($Name, $ErrorAction) [pscustomobject]@{ Status = 'Running' } }",
+          "function Test-Path { param($LiteralPath) $false }",
+          "$script:setupRan = $false",
+          "function Invoke-PawnIOSetup { param($SetupPath) $script:setupRan = $true; 0 }",
+          "$code = Invoke-PawnIOInstall",
+          'Write-Host "EXIT=$code SETUP_RAN=$($script:setupRan)"',
+        ].join("; "),
+      );
+
+      expect(output).toMatch(/EXIT=0/);
+      expect(output).toMatch(/SETUP_RAN=False/i);
+      expect(output).toMatch(/already installed and running; skipping/);
+    });
+
+    it("runs setup when no PawnIO service is registered", () => {
+      const scriptEsc = scriptPath.replace(/'/g, "''");
+      const setupEsc = officialSetupPath.replace(/'/g, "''");
+      const cacheEsc = cacheDir.replace(/'/g, "''");
+
+      const output = runPowerShell(
+        [
+          "$ErrorActionPreference = 'Stop'",
+          `. '${scriptEsc}' -NoPrompt`,
+          "function Test-PawnIODevicePresent { $false }",
+          "function Get-Service { param($Name, $ErrorAction) return $null }",
+          "function Test-Path { param($LiteralPath) $false }",
+          "$script:setupRan = $false",
+          `function Get-PawnIOSetupDownloadDir { '${cacheEsc}' }`,
+          `function Get-PawnIOSetupExe { param($DownloadDir) '${setupEsc}' }`,
+          "function Invoke-PawnIOSetup { param($SetupPath) $script:setupRan = $true; 0 }",
+          "function Ensure-PawnIOServiceRunning { $true }",
+          "function Remove-PawnIOSetupDownloadDir { param($Dir) }",
+          "$code = Invoke-PawnIOInstall",
+          'Write-Host "EXIT=$code SETUP_RAN=$($script:setupRan)"',
+        ].join("; "),
+      );
+
+      expect(output).toMatch(/EXIT=0/);
+      expect(output).toMatch(/SETUP_RAN=True/i);
     });
   },
 );
