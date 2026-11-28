@@ -1,0 +1,22 @@
+# OSV exemptions for transitive Tauri/Linux crates we cannot bump on Tauri 2.x without a major upgrade.
+# PC-Temp ships Windows-only (NSIS); glib and proc-macro-error are not in the Windows dependency graph at runtime.
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0543"
+ignoreUntil = 2027-02-26
+reason = "chrono 0.4.45 is pulled only by serde_with via tauri-utils; RUSTSEC lists no patched release and app code does not depend on chrono directly."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0429"
+ignoreUntil = 2027-02-26
+reason = "glib 0.18.5 is a Linux GTK stack dependency of tray-icon/webkit through Tauri; Windows builds do not link GTK and there is no fixed glib on this Tauri 2.12 line."
+
+[[IgnoredVulns]]
+id = "GHSA-wrw7-89jp-8q8g"
+ignoreUntil = 2027-02-26
+reason = "GHSA alias for glib 0.18.5 (RUSTSEC-2024-0429); same Linux-only transitive Tauri/GTK path, unreachable on Windows-only release targets."
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2024-0370"
+ignoreUntil = 2027-02-26
+reason = "proc-macro-error 1.0.4 is unmaintained and only used by glib-macros/gtk3-macros on Linux; compile-time on non-Windows targets only, not in Windows artifact."
