@@ -16,6 +16,9 @@ $script:PAWNIO_SETUP_ARGS = @('-install', '-silent')
 $script:PAWNIO_REBOOT_EXIT_CODE = 3010
 $script:PAWNIO_UNINSTALL_REG = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\PawnIO'
 $script:PAWNIO_SERVICE_NAME = 'PawnIO'
+# PawnIO_setup.exe 2.2.0 release asset (SHA-256 and Authenticode signer thumbprint).
+$script:PAWNIO_SETUP_SHA256 = '1F519A22E47187F70A1379A48CA604981C4FCF694F4E65B734AAA74A9FBA3032'
+$script:PAWNIO_SIGNER_THUMBPRINT = 'F380DCC9F706E2756A5047B832FFE719E1BC35F5'
 
 function Write-InstallDetail {
     param([string]$Message)
@@ -37,10 +40,19 @@ function Test-PawnIOSetupAuthenticode {
 
     $sig = Get-AuthenticodeSignature -FilePath $Path
     if ($sig.Status -ne 'Valid') {
+        Write-InstallDetail "PawnIO setup Authenticode status is $($sig.Status) (expected Valid)."
         return $false
     }
-    $subject = $sig.SignerCertificate.Subject
-    return $subject -match 'namazso'
+    if ($sig.SignerCertificate.Thumbprint -ne $script:PAWNIO_SIGNER_THUMBPRINT) {
+        Write-InstallDetail 'PawnIO setup signer thumbprint does not match the pinned release.'
+        return $false
+    }
+    $hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+    if ($hash -ne $script:PAWNIO_SETUP_SHA256) {
+        Write-InstallDetail 'PawnIO setup SHA-256 does not match the pinned 2.2.0 release.'
+        return $false
+    }
+    return $true
 }
 
 function Get-PawnIOSetupDownloadDir {
@@ -127,39 +139,45 @@ $($script:PAWNIO_MANUAL_URL)
     }
 }
 
-if (Test-PawnIOInstalled) {
-    Write-InstallDetail 'PawnIO is already installed; skipping.'
-    exit 0
+function Invoke-PawnIOInstall {
+    if (Test-PawnIOInstalled) {
+        Write-InstallDetail 'PawnIO is already installed; skipping.'
+        return 0
+    }
+
+    $pawnioSetupDownloadDir = $null
+    try {
+        $pawnioSetupDownloadDir = Get-PawnIOSetupDownloadDir
+        $setup = Get-PawnIOSetupExe -DownloadDir $pawnioSetupDownloadDir
+        if (-not (Test-PawnIOSetupAuthenticode -Path $setup)) {
+            throw 'PawnIO setup failed release pin verification (expected PawnIO 2.2.0 hash and signer).'
+        }
+
+        $exitCode = Invoke-PawnIOSetup -SetupPath $setup
+        switch ($exitCode) {
+            0 {
+                Write-InstallDetail 'PawnIO installed successfully.'
+                return 0
+            }
+            $script:PAWNIO_REBOOT_EXIT_CODE {
+                Write-InstallDetail 'PawnIO installed; a reboot is required before CPU temperatures are available.'
+                return 0
+            }
+            default {
+                throw "PawnIO setup exited with code $exitCode."
+            }
+        }
+    } catch {
+        Write-InstallDetail "PawnIO install step failed: $($_.Exception.Message)"
+        Show-PawnIOManualInstallNotice
+        return 0
+    } finally {
+        if ($pawnioSetupDownloadDir) {
+            Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
+        }
+    }
 }
 
-$pawnioSetupDownloadDir = $null
-try {
-    $pawnioSetupDownloadDir = Get-PawnIOSetupDownloadDir
-    $setup = Get-PawnIOSetupExe -DownloadDir $pawnioSetupDownloadDir
-    if (-not (Test-PawnIOSetupAuthenticode -Path $setup)) {
-        throw 'PawnIO setup failed Authenticode verification (expected valid namazso signature).'
-    }
-
-    $exitCode = Invoke-PawnIOSetup -SetupPath $setup
-    switch ($exitCode) {
-        0 {
-            Write-InstallDetail 'PawnIO installed successfully.'
-            exit 0
-        }
-        $script:PAWNIO_REBOOT_EXIT_CODE {
-            Write-InstallDetail 'PawnIO installed; a reboot is required before CPU temperatures are available.'
-            exit 0
-        }
-        default {
-            throw "PawnIO setup exited with code $exitCode."
-        }
-    }
-} catch {
-    Write-InstallDetail "PawnIO install step failed: $($_.Exception.Message)"
-    Show-PawnIOManualInstallNotice
-    exit 0
-} finally {
-    if ($pawnioSetupDownloadDir) {
-        Remove-PawnIOSetupDownloadDir -Dir $pawnioSetupDownloadDir
-    }
+if ($MyInvocation.InvocationName -ne '.') {
+    exit (Invoke-PawnIOInstall)
 }
